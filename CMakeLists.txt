@@ -31,7 +31,7 @@ SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 SET(libs roslib roscpp rosbag glog)
 
 
-ROSBUILD_ADD_EXECUTABLE(extractor
-                        src/extractor-main.cc)
-TARGET_LINK_LIBRARIES(extractor ${libs})
+ROSBUILD_ADD_EXECUTABLE(slam-frontend
+                        src/slam-main.cc)
+TARGET_LINK_LIBRARIES(slam-frontend ${libs})
 
