@@ -1,5 +1,5 @@
 # vision-slam-frontend
-Simple frontend for SLAM for a ground robot using vision and odometry
+SLAM frontend for a ground robot using vision and odometry
 
 ## Dependencies
 Install [ROS](http://wiki.ros.org/ROS/Installation)
