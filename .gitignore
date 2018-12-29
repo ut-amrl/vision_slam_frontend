@@ -1,5 +1,7 @@
 build
 bin
+lib
 *.kdev4
 msg_gen
 src/laser_extractor
+data

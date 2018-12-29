@@ -27,16 +27,20 @@
 #include <inttypes.h>
 #include <vector>
 
-
+#include "opencv2/opencv.hpp"
+#include "gflags/gflags.h"
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 #include "gflags/gflags.h"
 #include "image_transport/image_transport.h"
-#include "sensor_msgs/Image.h"
+#include "sensor_msgs/CompressedImage.h"
 #include "nav_msgs/Odometry.h"
 #include "rosbag/bag.h"
 #include "rosbag/view.h"
 #include "ros/package.h"
+
+// Include CImg last so that the X11 #defines do not pollute everything else.
+#include "CImg.h"
 
 using ros::Time;
 using std::string;
@@ -44,7 +48,32 @@ using std::vector;
 using Eigen::Quaternionf;
 using Eigen::Vector3f;
 
-void ProcessBagfile(const char* filename) {
+DEFINE_string(image_topic, "camera", "Name of ROS topic for image data");
+DEFINE_string(odom_topic, "odometry", "Name of ROS topic for odometry data");
+DEFINE_string(input, "", "Name of ROS bag file to load");
+DEFINE_bool(visualize, false, "Display images loaded");
+DECLARE_string(helpon);
+DECLARE_int32(v);
+
+void CompressedImageCallback(const sensor_msgs::CompressedImage& msg) {
+  if (FLAGS_v > 0) {
+    printf("CompressedImage t=%f\n", msg.header.stamp.toSec());
+  }
+  if (FLAGS_visualize) {
+    cv::Mat image = cv::imdecode(cv::InputArray(msg.data),1);
+    cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
+    cv::imshow("Display Image", image);
+    cv::waitKey(16);
+  }
+}
+
+void OdometryCallback(const nav_msgs::Odometry& msg) {
+  if (FLAGS_v > 0) {
+    printf("Odometry t=%f\n", msg.header.stamp.toSec());
+  }
+}
+
+void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   rosbag::Bag bag;
   try {
     bag.open(filename,rosbag::bagmode::Read);
@@ -52,10 +81,12 @@ void ProcessBagfile(const char* filename) {
     printf("Unable to read %s, reason:\n %s\n", filename, exception.what());
     return;
   }
+  printf("Processing %s\n", filename);
+  // ros::Subscriber image_sub = n->subscribe("image_convert_callback", 1,)
 
   vector<string> topics;
-  topics.push_back("localization");
-  topics.push_back("laser");
+  topics.push_back(FLAGS_image_topic.c_str());
+  topics.push_back(FLAGS_odom_topic.c_str());
   rosbag::View view(bag, rosbag::TopicQuery(topics));
 
   double bag_t_start = -1;
@@ -65,29 +96,35 @@ void ProcessBagfile(const char* filename) {
     if (bag_t_start < 0.0) {
       bag_t_start = message.getTime().toSec();
     }
+    ros::spinOnce();
     {
-      sensor_msgs::LaserScanPtr laser_msg =
-          message.instantiate<sensor_msgs::LaserScan>();
-      if (laser_msg != NULL) {
-        printf("Laser t=%f\n", message.getTime().toSec());
+      sensor_msgs::CompressedImagePtr image_msg =
+          message.instantiate<sensor_msgs::CompressedImage>();
+      if (image_msg != NULL) {
+                CompressedImageCallback(*image_msg);
       }
     }
     {
-      laser_extractor::LocalizationMsgPtr localization_msg =
-          message.instantiate<laser_extractor::LocalizationMsg>();
-      if (localization_msg != NULL) {
-        printf("Localization t=%f\n", message.getTime().toSec());
+      nav_msgs::OdometryPtr odom_msg =
+          message.instantiate<nav_msgs::Odometry>();
+      if (odom_msg != NULL) {
+        OdometryCallback(*odom_msg);
       }
     }
   }
 }
 
-
 int main(int argc, char** argv) {
-  // OMP_PARALLEL_FOR
-  for (int i = 1; i < argc; ++i) {
-    printf("Converting %s\n", argv[i]);
-    ProcessBagfile(argv[i]);
+  google::ParseCommandLineFlags(&argc, &argv, false);
+  if (FLAGS_input == "") {
+    fprintf(stderr, "ERROR: Must specify input file!\n");
+    return 1;
   }
+
+  // Initialize ROS.
+  ros::init(argc, argv, "slam_frontend");
+  ros::NodeHandle n;
+
+  ProcessBagfile(FLAGS_input.c_str(), &n);
   return 0;
 }

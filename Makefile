@@ -1,4 +1,3 @@
-include $(shell rospack find mk)/cmake.mk
 # Clang is a good compiler to use during development due to its faster compile
 # times and more readable output.
 C_compiler=/usr/bin/clang
@@ -21,7 +20,7 @@ endif
 .SILENT:
 
 all: $(build_dir) $(build_dir)/CMakeLists.txt.copy
-	$(info $$build_type is [${build_type}])
+	$(info Build_type is [${build_type}])
 	$(MAKE) --no-print-directory -C $(build_dir)
 
 # Sets the build type to Debug.
@@ -34,7 +33,7 @@ debug_all: | set_debug all
 clean:
 	rm -rf bin lib
 
-$(build_dir)/CMakeLists.txt.copy: CMakeLists.txt Makefile $(build_dir)
+$(build_dir)/CMakeLists.txt.copy: CMakeLists.txt Makefile
 	cd $(build_dir) && cmake -DCMAKE_BUILD_TYPE=$(build_type) \
 		-DCMAKE_CXX_COMPILER=$(CXX_compiler) \
 		-DCMAKE_C_COMPILER=$(C_compiler) ..
