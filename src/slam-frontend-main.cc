@@ -39,8 +39,7 @@
 #include "rosbag/view.h"
 #include "ros/package.h"
 
-// Include CImg last so that the X11 #defines do not pollute everything else.
-#include "CImg.h"
+#include "slam-frontend.h"
 
 using ros::Time;
 using std::string;
@@ -59,11 +58,20 @@ void CompressedImageCallback(const sensor_msgs::CompressedImage& msg) {
   if (FLAGS_v > 0) {
     printf("CompressedImage t=%f\n", msg.header.stamp.toSec());
   }
+  cv::Mat image = cv::imdecode(cv::InputArray(msg.data),1);
+  if (msg.format.find("bayer_rggb8") != string::npos) {
+    cv::Mat1b image_channels[image.channels()];
+    cv::split(image, image_channels);
+    image = image_channels[0];
+    cv::cvtColor(image_channels[0], image, cv::COLOR_BayerBG2BGR);
+  }
+
   if (FLAGS_visualize) {
-    cv::Mat image = cv::imdecode(cv::InputArray(msg.data),1);
     cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
     cv::imshow("Display Image", image);
-    cv::waitKey(16);
+    if (cv::waitKey(16) == 27) {
+      exit(0);
+    }
   }
 }
 
