@@ -39,7 +39,7 @@
 #include "rosbag/view.h"
 #include "ros/package.h"
 
-#include "slam-frontend.h"
+#include "slam_frontend.h"
 
 using ros::Time;
 using std::string;
@@ -54,18 +54,33 @@ DEFINE_bool(visualize, false, "Display images loaded");
 DECLARE_string(helpon);
 DECLARE_int32(v);
 
-void CompressedImageCallback(const sensor_msgs::CompressedImage& msg) {
+/* TODO List:
+ * 1) Work with several images, allowing keypoints to come back (Done)
+ * Tonight:
+  * 2) Some way to store the image chains in a database.
+  * 	2a) Each chain / track should have the same starting node and thats all we care about.
+  * 3) Somehow broadcast each match to a ros node. (DONE)
+  * 4) Somehow finally broadcast the database over a message. (DONE)
+ * Tomorrow:
+  * 5) Build a test application that given a bag file containing the database, verify matching.
+  * 6) Use ConfigReader to be able to have lua file configs.
+ */
+
+void CompressedImageCallback(slam::Frontend& slam_frontend,  sensor_msgs::CompressedImage& msg) {
+  double image_time = msg.header.stamp.toSec();
   if (FLAGS_v > 0) {
-    printf("CompressedImage t=%f\n", msg.header.stamp.toSec());
+    printf("CompressedImage t=%f\n", image_time);
   }
   cv::Mat image = cv::imdecode(cv::InputArray(msg.data),1);
   if (msg.format.find("bayer_rggb8") != string::npos) {
-    cv::Mat1b image_channels[image.channels()];
+    cv::Mat1b *image_channels = new cv::Mat1b[image.channels()];
     cv::split(image, image_channels);
     image = image_channels[0];
     cv::cvtColor(image_channels[0], image, cv::COLOR_BayerBG2BGR);
+    cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
+    delete [] image_channels;
   }
-
+  slam_frontend.ObserveImage(image, image_time);
   if (FLAGS_visualize) {
     cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
     cv::imshow("Display Image", image);
@@ -96,6 +111,8 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   topics.push_back(FLAGS_image_topic.c_str());
   topics.push_back(FLAGS_odom_topic.c_str());
   rosbag::View view(bag, rosbag::TopicQuery(topics));
+  
+  slam::Frontend slam_frontend(*n, "");
 
   double bag_t_start = -1;
   // Iterate for every message.
@@ -109,7 +126,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       sensor_msgs::CompressedImagePtr image_msg =
           message.instantiate<sensor_msgs::CompressedImage>();
       if (image_msg != NULL) {
-                CompressedImageCallback(*image_msg);
+	CompressedImageCallback(slam_frontend, *image_msg);
       }
     }
     {

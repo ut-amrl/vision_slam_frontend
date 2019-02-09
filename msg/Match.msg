@@ -1,0 +1,3 @@
+uint64 pose_initial
+uint64 initial_index
+uint64 found_index

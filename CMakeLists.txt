@@ -1,7 +1,7 @@
-PROJECT(laser-extractor)
+PROJECT(vision_slam_frontend)
 CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 
-MESSAGE(STATUS "Compiling Laser Extractor")
+MESSAGE(STATUS "Compiling Slam Frontend")
 MESSAGE(STATUS "Using compiler: ${CMAKE_CXX_COMPILER}")
 MESSAGE(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
 MESSAGE(STATUS "Arch: ${CMAKE_SYSTEM_PROCESSOR}")
@@ -17,9 +17,11 @@ ELSEIF(${CMAKE_BUILD_TYPE} MATCHES "Debug")
 ENDIF()
 
 FIND_PACKAGE(OpenCV REQUIRED)
+FIND_PACKAGE(catkin REQUIRED COMPONENTS roscpp rospy std_msgs message_generation)
 INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})
 
 INCLUDE($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
+INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/build/devel/include/vision_slam_frontend)
 rosbuild_init()
 SET(ROS_BUILD_STATIC_LIBS true)
 SET(ROS_BUILD_SHARED_LIBS false)
@@ -30,16 +32,23 @@ MESSAGE(STATUS "CXX Flags: ${CMAKE_CXX_FLAGS}")
 SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 
-SET(libs roslib roscpp rosbag glog gflags)
+SET(libs roslib roscpp rosbag glog gflags opencv_xfeatures2d)
 
 ADD_LIBRARY(shared_library
             src/gui_helpers.cc
             src/timer.cc)
 
-ROSBUILD_ADD_EXECUTABLE(slam-frontend
-                        src/slam-frontend-main.cc)
-TARGET_LINK_LIBRARIES(slam-frontend
+ROSBUILD_ADD_EXECUTABLE(slam_frontend
+                        src/slam_frontend_main.cc
+                        src/slam_frontend.cc
+                        src/slam_frame.cc
+                        src/slam_config.cc
+                        src/slam_frontend_backend_comm.cc)
+
+TARGET_LINK_LIBRARIES(slam_frontend
                       shared_library
                       ${OpenCV_LIBS}
                       ${libs})
-
+add_message_files(FILES Match.msg Matches.msg Keypoint.msg Keypoints.msg)
+generate_messages(DEPENDENCIES std_msgs)
+catkin_package(CATKIN_DEPENDS message_runtime)

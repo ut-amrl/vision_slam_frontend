@@ -13,32 +13,39 @@
 //  If not, see <http://www.gnu.org/licenses/>.
 //========================================================================
 /*!
-\file    slam_frontend.h
-\brief   A vision SLAM frontend
-\author  Joydeep Biswas, (C) 2018
+\file    slam_frontend.cc
+\brief   A vision SLAM communicator
+\author  John Bachman, (C) 2019
 */
 //========================================================================
 
-#include "eigen3/Eigen/Dense"
-#include "eigen3/Eigen/Geometry"
-#include "opencv2/opencv.hpp"
+#ifndef SLAM_FRONTEND_BACKEND_COMM_H
+#define SLAM_FRONTEND_BACKEND_COMM_H
 
-#ifndef __SLAM_FRONTEND_H__
-#define __SLAM_FRONTEND_H__
+#include <ros/ros.h>
+#include <opencv2/opencv.hpp>
+
+#include "vio_types.h"
+#include "Matches.h"
+#include "Keypoints.h"
 
 namespace slam {
-class Frontend {
+class FrontendBackendComm {
  public:
-  // Observe a new image. Extract features, and match to past frames.
-  void ObserveImage(const cv::Mat& image, double time);
-
-  void ObserveOdometry(const Eigen::Vector3f& translation,
-                       const Eigen::Quaternionf& rotation,
-                       double time);
-
+  FrontendBackendComm(ros::NodeHandle& n);
+  void QueueMatch(uint64_t initial_frame, 
+		  uint64_t initial_index, 
+		  uint64_t found_index);
+  void BroadcastMatches(uint64_t old_frame, uint64_t new_frame);
+  void QueueKeypoint(cv::KeyPoint kpt);
+  void BroadcastKeypoints(uint64_t pose_id, 
+			  const std::vector<cv::KeyPoint> keypoints);
  private:
-
+  ros::Publisher match_pub_;
+  ros::Publisher keypoint_pub_;
+  vision_slam_frontend::Matches* curr_matches_;
+  vision_slam_frontend::Keypoints* curr_keypoints_;
 };
-}  // namespace slam
+}
 
-#endif   // __SLAM_FRONTEND_H__
+#endif // SLAM_FRONTEND_BACKEND_COMM_H
