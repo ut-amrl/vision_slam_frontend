@@ -27,6 +27,7 @@
 #include <inttypes.h>
 #include <vector>
 
+#include "glog/logging.h"
 #include "opencv2/opencv.hpp"
 #include "gflags/gflags.h"
 #include "eigen3/Eigen/Dense"
@@ -66,6 +67,10 @@ DECLARE_int32(v);
   * 6) Use ConfigReader to be able to have lua file configs.
  */
 
+static nav_msgs::Odometry last_slam_odom;
+static bool slam_needed;
+static uint64_t image_num = 0;
+
 void CompressedImageCallback(slam::Frontend& slam_frontend,  sensor_msgs::CompressedImage& msg) {
   double image_time = msg.header.stamp.toSec();
   if (FLAGS_v > 0) {
@@ -80,19 +85,47 @@ void CompressedImageCallback(slam::Frontend& slam_frontend,  sensor_msgs::Compre
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
     delete [] image_channels;
   }
-  slam_frontend.ObserveImage(image, image_time);
-  if (FLAGS_visualize) {
-    cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
-    cv::imshow("Display Image", image);
-    if (cv::waitKey(16) == 27) {
-      exit(0);
-    }
+  if (slam_needed) {
+    LOG(INFO) << "Observing image " << image_num 
+	<< " for SLAM vision data" << std::endl;
+    slam_frontend.ObserveImage(image, image_time, image_num);
+    if (FLAGS_visualize) {
+      cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
+      cv::imshow("Display Image", image);
+      if (cv::waitKey(16) == 27) {
+	exit(0);
+      }
+    } 
+    slam_needed = false;
   }
+  image_num++;
+}
+
+bool OdomCheck(const nav_msgs::Odometry& new_odom) {
+    geometry_msgs::Point p;
+    p.x = new_odom.pose.pose.position.x - last_slam_odom.pose.pose.position.x;
+    p.y = new_odom.pose.pose.position.y - last_slam_odom.pose.pose.position.y;
+    p.z = new_odom.pose.pose.position.z - last_slam_odom.pose.pose.position.z;
+    if (sqrt(pow(p.x, 2) + pow(p.y, 2) + pow(p.z, 2)) >= 0.1) {
+      return true;
+    }
+    geometry_msgs::Quaternion q_old = last_slam_odom.pose.pose.orientation;
+    geometry_msgs::Quaternion q_new = last_slam_odom.pose.pose.orientation;
+    double inner_product = q_new.x * q_old.x + q_new.y * q_old.y + q_new.z * q_old.z + q_new.w * q_old.w;
+    double angle_change = acos(2 * pow(inner_product, 2) - 1);
+    if (angle_change >= 10) {
+      return true;
+    }
+    return false;
 }
 
 void OdometryCallback(const nav_msgs::Odometry& msg) {
   if (FLAGS_v > 0) {
     printf("Odometry t=%f\n", msg.header.stamp.toSec());
+  }
+  if (OdomCheck(msg)) {
+    last_slam_odom = msg;
+    slam_needed = true;
   }
 }
 
@@ -105,8 +138,6 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
     return;
   }
   printf("Processing %s\n", filename);
-  // ros::Subscriber image_sub = n->subscribe("image_convert_callback", 1,)
-
   vector<string> topics;
   topics.push_back(FLAGS_image_topic.c_str());
   topics.push_back(FLAGS_odom_topic.c_str());
@@ -114,6 +145,8 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   
   slam::Frontend slam_frontend(*n, "");
 
+  last_slam_odom.pose.pose.position = geometry_msgs::Point();
+  
   double bag_t_start = -1;
   // Iterate for every message.
   for (rosbag::View::iterator it = view.begin(); it != view.end(); ++it) {

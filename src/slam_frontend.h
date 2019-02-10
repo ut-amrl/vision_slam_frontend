@@ -35,7 +35,9 @@ class Frontend {
  public:
   Frontend(ros::NodeHandle& n, const std::string& config_path);
   // Observe a new image. Extract features, and match to past frames.
-  void ObserveImage(const cv::Mat& image, double time);
+  void ObserveImage(const cv::Mat& image, 
+		    double time,
+		    uint64_t frame_ID);
 
   void ObserveOdometry(const Eigen::Vector3f& translation,
                        const Eigen::Quaternionf& rotation,

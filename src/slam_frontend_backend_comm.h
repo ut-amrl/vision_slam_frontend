@@ -25,7 +25,6 @@
 #include <ros/ros.h>
 #include <opencv2/opencv.hpp>
 
-#include "vio_types.h"
 #include "Matches.h"
 #include "Keypoints.h"
 

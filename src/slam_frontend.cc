@@ -30,7 +30,6 @@
 #include <glog/logging.h>
 
 #include "slam_frontend.h"
-#include "vio_types.h"
 #include "slam_frontend_backend_comm.h"
 
 using std::string;
@@ -72,7 +71,7 @@ slam::Frontend::Frontend(ros::NodeHandle& n, const std::string& config_path) {
   }
 }
 
-void slam::Frontend::ObserveImage(const cv::Mat& image, double time) {
+void slam::Frontend::ObserveImage(const cv::Mat& image, double time, uint64_t frame_ID) {
   std::vector<cv::KeyPoint> frame_keypoints;
   cv::Mat frame_descriptors;
   if (config_.getDescExType() == FrontendConfig::DescriptorExtractorType::FREAK) {
@@ -87,7 +86,7 @@ void slam::Frontend::ObserveImage(const cv::Mat& image, double time) {
   Frame curr_frame(frame_keypoints,
 		   frame_descriptors, 
 		   config_, 
-		   frame_ID_count_++);
+		   frame_ID);
   for(uint32_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
     Frame& past_frame = frame_list_[frame_num];
     std::vector<cv::DMatch> matches = 
@@ -95,6 +94,7 @@ void slam::Frontend::ObserveImage(const cv::Mat& image, double time) {
     std::sort(matches.begin(), matches.end());
     const int num_good_matches = matches.size() * config_.getBestPercent();
     matches.erase(matches.begin() + num_good_matches, matches.end());
+    //Restructure matches, add all keypoints to new list.
     for (auto match: matches) {
       std::pair<uint64_t, uint64_t> initial = 
 	  past_frame.GetInitialFrame(match);

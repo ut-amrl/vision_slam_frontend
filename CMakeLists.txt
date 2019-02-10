@@ -49,6 +49,22 @@ TARGET_LINK_LIBRARIES(slam_frontend
                       shared_library
                       ${OpenCV_LIBS}
                       ${libs})
+                      
+ROSBUILD_ADD_EXECUTABLE(slam_test
+			src/test/slam_test.cc)
+
+            
+TARGET_LINK_LIBRARIES(slam_test
+		      ${OpenCV_LIBS}
+		      ${libs})
+		      
+ROSBUILD_ADD_EXECUTABLE(bag_image_extract
+			src/test/bag_extract.cc)
+			
+TARGET_LINK_LIBRARIES(bag_image_extract
+		      ${OpenCV_LIBS}
+		      ${libs})
+
 add_message_files(FILES Match.msg Matches.msg Keypoint.msg Keypoints.msg)
 generate_messages(DEPENDENCIES std_msgs)
 catkin_package(CATKIN_DEPENDS message_runtime)

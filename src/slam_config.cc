@@ -23,7 +23,7 @@
 
 slam::FrontendConfig::FrontendConfig() {
   //Load Default values
-  descriptor_extract_type_ = FrontendConfig::DescriptorExtractorType::FREAK;
+  descriptor_extract_type_ = FrontendConfig::DescriptorExtractorType::AKAZE;
   best_percent_ = 0.3f;
   nn_match_ratio_ = 0.8f;
   frame_life_ = 5;
