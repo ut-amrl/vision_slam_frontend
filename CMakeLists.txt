@@ -17,12 +17,12 @@ ELSEIF(${CMAKE_BUILD_TYPE} MATCHES "Debug")
 ENDIF()
 
 FIND_PACKAGE(OpenCV REQUIRED)
-FIND_PACKAGE(catkin REQUIRED COMPONENTS roscpp rospy std_msgs message_generation)
 INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})
 
 INCLUDE($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
-INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/build/devel/include/vision_slam_frontend)
+
 rosbuild_init()
+
 SET(ROS_BUILD_STATIC_LIBS true)
 SET(ROS_BUILD_SHARED_LIBS false)
 
@@ -31,6 +31,9 @@ MESSAGE(STATUS "CXX Flags: ${CMAKE_CXX_FLAGS}")
 
 SET(EXECUTABLE_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/bin)
 SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
+
+# Ask ROS to compile custom message type definitions.
+rosbuild_genmsg()
 
 SET(libs roslib roscpp rosbag glog gflags opencv_xfeatures2d)
 
@@ -65,6 +68,3 @@ TARGET_LINK_LIBRARIES(bag_image_extract
 		      ${OpenCV_LIBS}
 		      ${libs})
 
-add_message_files(FILES Match.msg Matches.msg Keypoint.msg Keypoints.msg)
-generate_messages(DEPENDENCIES std_msgs)
-catkin_package(CATKIN_DEPENDS message_runtime)

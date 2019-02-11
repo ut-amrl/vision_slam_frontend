@@ -1,3 +1,5 @@
+include $(shell rospack find mk)/cmake.mk
+
 # Clang is a good compiler to use during development due to its faster compile
 # times and more readable output.
 C_compiler=/usr/bin/clang

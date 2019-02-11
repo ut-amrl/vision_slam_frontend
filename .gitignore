@@ -6,3 +6,4 @@ msg_gen
 src/laser_extractor
 data
 core
+src/vision_slam_frontend

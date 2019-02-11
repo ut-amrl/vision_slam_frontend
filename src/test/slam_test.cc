@@ -40,10 +40,10 @@
 #include "rosbag/view.h"
 #include "ros/package.h"
 
-#include "Keypoints.h"
-#include "Keypoint.h"
-#include "Matches.h"
-#include "Match.h"
+#include "vision_slam_frontend/Keypoints.h"
+#include "vision_slam_frontend/Keypoint.h"
+#include "vision_slam_frontend/Matches.h"
+#include "vision_slam_frontend/Match.h"
 
 using ros::Time;
 using std::string;

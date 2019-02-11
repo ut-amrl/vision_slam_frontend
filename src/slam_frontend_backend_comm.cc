@@ -24,10 +24,10 @@
 #include <opencv2/opencv.hpp>
 #include <ros/ros.h>
 
-#include "Match.h"
-#include "Matches.h"
-#include "Keypoint.h"
-#include "Keypoints.h"
+#include "vision_slam_frontend/Match.h"
+#include "vision_slam_frontend/Matches.h"
+#include "vision_slam_frontend/Keypoint.h"
+#include "vision_slam_frontend/Keypoints.h"
 
 slam::FrontendBackendComm::FrontendBackendComm(ros::NodeHandle& n) {
   ros::Rate LoopRate(1000);

@@ -25,8 +25,8 @@
 #include <ros/ros.h>
 #include <opencv2/opencv.hpp>
 
-#include "Matches.h"
-#include "Keypoints.h"
+#include "vision_slam_frontend/Matches.h"
+#include "vision_slam_frontend/Keypoints.h"
 
 namespace slam {
 class FrontendBackendComm {
