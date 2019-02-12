@@ -122,6 +122,13 @@ void OdometryCallback(const nav_msgs::Odometry& msg) {
 }
 
 void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
+  // Setup ROS Communication
+  ros::Rate LoopRate(100);
+  ros::Publisher node_pub =
+      n->advertise<vision_slam_frontend::SLAMNode>("slam_nodes", 1000);
+  ros::Publisher corr_pub =
+      n->advertise<vision_slam_frontend::VisionCorrespondence>("slam_corr", 1000);
+  // Open/process bag file
   rosbag::Bag bag;
   try {
     bag.open(filename,rosbag::bagmode::Read);
@@ -138,6 +145,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   last_slam_odom.pose.pose.position = geometry_msgs::Point();
   double bag_t_start = -1;
   // Iterate for every message.
+  int max_frame = 0;
   for (rosbag::View::iterator it = view.begin(); it != view.end(); ++it) {
     const rosbag::MessageInstance& message = *it;
     if (bag_t_start < 0.0) {
@@ -158,26 +166,30 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
         OdometryCallback(*odom_msg);
       }
     }
+    max_frame++;
+    if (max_frame > 500) {
+      break;
+    }
   }
   // Publish slam data
   LOG(INFO) << "Publishing SLAM data" << std::endl;
-  ros::Rate LoopRate(100);
-  ros::Publisher node_pub =
-      n->advertise<vision_slam_frontend::SLAMNode>("slam_nodes", 1000);
-  ros::Publisher corr_pub =
-      n->advertise<vision_slam_frontend::VisionCorrespondence>("slam_corr", 1000);
+  LOG(INFO) << "Waiting for a subscriber" << std::endl;
+  while(node_pub.getNumSubscribers() <= 0 && corr_pub.getNumSubscribers() <= 0) {}
   std::vector<slam_types::SLAMNode> nodes = slam_frontend.getSLAMNodes();
   std::vector<slam_types::VisionCorrespondence> corrs = slam_frontend.getCorrespondences();
   for (auto node : nodes) {
-    node_pub.publish<>(SLAMNodeToRos(node));
+    node_pub.publish<vision_slam_frontend::SLAMNode>(SLAMNodeToRos(node));
+    ros::spinOnce();
   }
   for (auto corr : corrs) {
-    corr_pub.publish<>(VisionCorrespondenceToRos(corr));
+    corr_pub.publish<vision_slam_frontend::VisionCorrespondence>(VisionCorrespondenceToRos(corr));
+    ros::spinOnce();
   }
   LOG(INFO) << "Finished publishing SLAM data" << std::endl;
 }
 
 int main(int argc, char** argv) {
+  google::InitGoogleLogging(*argv);
   google::ParseCommandLineFlags(&argc, &argv, false);
   if (FLAGS_input == "") {
     fprintf(stderr, "ERROR: Must specify input file!\n");
