@@ -43,28 +43,17 @@ ADD_LIBRARY(shared_library
 
 ROSBUILD_ADD_EXECUTABLE(slam_frontend
                         src/slam_frontend_main.cc
-                        src/slam_frontend.cc
-                        src/slam_frame.cc
-                        src/slam_config.cc
-                        src/slam_frontend_backend_comm.cc)
+                        src/slam_frontend.cc)
 
 TARGET_LINK_LIBRARIES(slam_frontend
                       shared_library
                       ${OpenCV_LIBS}
                       ${libs})
-                      
-ROSBUILD_ADD_EXECUTABLE(slam_test
-			src/test/slam_test.cc)
 
-            
-TARGET_LINK_LIBRARIES(slam_test
-		      ${OpenCV_LIBS}
-		      ${libs})
-		      
 ROSBUILD_ADD_EXECUTABLE(bag_image_extract
-			src/test/bag_extract.cc)
-			
+                        src/test/bag_extract.cc)
+
 TARGET_LINK_LIBRARIES(bag_image_extract
-		      ${OpenCV_LIBS}
-		      ${libs})
+                      ${OpenCV_LIBS}
+                      ${libs})
 
