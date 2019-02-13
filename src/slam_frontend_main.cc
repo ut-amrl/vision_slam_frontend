@@ -20,6 +20,7 @@
 */
 //========================================================================
 
+#include <signal.h>
 #include <stdlib.h>
 #include <math.h>
 #include <stdio.h>
@@ -51,8 +52,12 @@ using std::vector;
 using Eigen::Quaternionf;
 using Eigen::Vector3f;
 
-DEFINE_string(image_topic, "camera", "Name of ROS topic for image data");
-DEFINE_string(odom_topic, "odometry", "Name of ROS topic for odometry data");
+DEFINE_string(image_topic, 
+              "/camera_right/image_raw/compressed",
+              "Name of ROS topic for image data");
+DEFINE_string(odom_topic,
+              "/odometry/filtered", 
+              "Name of ROS topic for odometry data");
 DEFINE_string(input, "", "Name of ROS bag file to load");
 DEFINE_bool(visualize, false, "Display images loaded");
 DECLARE_string(helpon);
@@ -146,8 +151,13 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   double bag_t_start = -1;
   // Iterate for every message.
   int max_frame = 0;
-  for (rosbag::View::iterator it = view.begin(); it != view.end(); ++it) {
+  for (rosbag::View::iterator it = view.begin();
+       ros::ok() && it != view.end();
+       ++it) {
     const rosbag::MessageInstance& message = *it;
+    if (FLAGS_v > 1) {
+      printf("Message t: %f\n", message.getTime().toSec());
+    }
     if (bag_t_start < 0.0) {
       bag_t_start = message.getTime().toSec();
     }
@@ -171,21 +181,25 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       break;
     }
   }
+  printf("Done processing bag file.\n");
   // Publish slam data
-  LOG(INFO) << "Publishing SLAM data" << std::endl;
-  LOG(INFO) << "Waiting for a subscriber" << std::endl;
-  while(node_pub.getNumSubscribers() <= 0 && corr_pub.getNumSubscribers() <= 0) {}
-  std::vector<slam_types::SLAMNode> nodes = slam_frontend.getSLAMNodes();
-  std::vector<slam_types::VisionCorrespondence> corrs = slam_frontend.getCorrespondences();
-  for (auto node : nodes) {
-    node_pub.publish<vision_slam_frontend::SLAMNode>(SLAMNodeToRos(node));
-    ros::spinOnce();
+  if (false) {
+    std::vector<slam_types::SLAMNode> nodes = slam_frontend.getSLAMNodes();
+    std::vector<slam_types::VisionCorrespondence> corrs = slam_frontend.getCorrespondences();
+    for (auto node : nodes) {
+      node_pub.publish<vision_slam_frontend::SLAMNode>(SLAMNodeToRos(node));
+      ros::spinOnce();
+    }
+    for (auto corr : corrs) {
+      corr_pub.publish<vision_slam_frontend::VisionCorrespondence>(VisionCorrespondenceToRos(corr));
+      ros::spinOnce();
+    }
   }
-  for (auto corr : corrs) {
-    corr_pub.publish<vision_slam_frontend::VisionCorrespondence>(VisionCorrespondenceToRos(corr));
-    ros::spinOnce();
-  }
-  LOG(INFO) << "Finished publishing SLAM data" << std::endl;
+}
+
+void SignalHandler(int signum) {
+  printf("Exiting with signal %d\n", signum);
+  exit(0);
 }
 
 int main(int argc, char** argv) {
@@ -198,6 +212,7 @@ int main(int argc, char** argv) {
   // Initialize ROS.
   ros::init(argc, argv, "slam_frontend");
   ros::NodeHandle n;
+  signal(SIGINT, SignalHandler);
   ProcessBagfile(FLAGS_input.c_str(), &n);
   return 0;
 }
