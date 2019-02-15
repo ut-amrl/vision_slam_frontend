@@ -39,6 +39,23 @@ using Eigen::Vector3f;
 
 /* --- Frontend Implementation Code --- */
 
+cv::Mat CreateDebugImage(const slam::Frame& frame_one,
+                         const slam::Frame& frame_two,
+                         const slam_types::VisionCorrespondence& corr) {
+  cv::Mat return_image = frame_one.debug_image_.clone();
+  cv::cvtColor(return_image, return_image, CV_GRAY2RGB);
+  for (auto c: corr.feature_matches) {
+    cv::circle(return_image,
+               frame_two.keypoints_[c.pose_i_id].pt,
+               5, CV_RGB(255, 0, 0));
+    cv::line(return_image, 
+             frame_two.keypoints_[c.pose_i_id].pt,
+             frame_one.keypoints_[c.pose_j_id].pt,
+             CV_RGB(0, 255, 0));
+  }
+  return return_image;
+}
+
 bool OdomCheck(const nav_msgs::Odometry& last_slam_odom, nav_msgs::Odometry& new_odom) {
     geometry_msgs::Point p;
     p.x = new_odom.pose.pose.position.x - last_slam_odom.pose.pose.position.x;
@@ -122,6 +139,9 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
                    frame_descriptors,
                    config_,
                    curr_frame_ID_);
+  if (config_.getDebug()) {
+    curr_frame.debug_image_ = image;
+  }
   for(uint32_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
     std::vector<slam_types::VisionCorrespondencePair> pairs;
     Frame& past_frame = frame_list_[frame_num];
@@ -149,6 +169,11 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
     features.push_back(CreateVisionFeature(i, curr_frame.keypoints_[i].pt));
   }
   nodes_.push_back(CreateSLAMNode(curr_frame.frame_ID_, features, odom_msg));
+  if (config_.getDebug() && !frame_list_.empty()) {    
+    debug_images_.push_back(CreateDebugImage(curr_frame,
+                                             frame_list_.back(),
+                                             correspondences_.back()));
+  }
   if (frame_list_.size() >= config_.getMaxFrameLife()) {
     frame_list_.erase(frame_list_.begin());
   }
@@ -163,6 +188,11 @@ slam::Frontend::getCorrespondences() {
 std::vector<slam_types::SLAMNode>
 slam::Frontend::getSLAMNodes() {
   return nodes_;
+}
+
+std::vector<cv::Mat>
+slam::Frontend::getDebugImages() {
+  return debug_images_;
 }
 
 slam_types::VisionCorrespondencePair
@@ -259,6 +289,7 @@ void slam::Frame::AddMatchInitial(cv::DMatch match,
 
 slam::FrontendConfig::FrontendConfig() {
   //Load Default values
+  debug_images_ = true;
   descriptor_extract_type_ = FrontendConfig::DescriptorExtractorType::AKAZE;
   best_percent_ = 0.3f;
   nn_match_ratio_ = 0.8f;

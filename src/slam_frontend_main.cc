@@ -42,12 +42,13 @@
 #include "ros/package.h"
 #include "vision_slam_frontend/SLAMNode.h"
 #include "vision_slam_frontend/VisionCorrespondence.h"
+#include "cv_bridge/cv_bridge.h"
 
 #include "slam_frontend.h"
 #include "slam_to_ros.h"
 
 using ros::Time;
-using std::string;
+using std::string; 
 using std::vector;
 using Eigen::Quaternionf;
 using Eigen::Vector3f;
@@ -114,7 +115,6 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   slam::Frontend slam_frontend(*n, "");
   double bag_t_start = -1;
   // Iterate for every message.
-  uint64_t max_frame = 0;
   for (rosbag::View::iterator it = view.begin();
        ros::ok() && it != view.end();
        ++it) {
@@ -140,10 +140,6 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
         OdometryCallback(*odom_msg);
       }
     }
-    max_frame++;
-    if (max_frame > 500) {
-      break;
-    }
   }
   printf("Done processing bag file.\n");
   // Publish slam data
@@ -159,6 +155,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
     }
     std::vector<slam_types::SLAMNode> nodes = slam_frontend.getSLAMNodes();
     std::vector<slam_types::VisionCorrespondence> corrs = slam_frontend.getCorrespondences();
+    std::vector<cv::Mat> debug_images = slam_frontend.getDebugImages();
     for (auto node : nodes) {
       output_bag.write<vision_slam_frontend::SLAMNode>("slam_nodes",
                                                        ros::Time::now(),
@@ -168,6 +165,18 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       output_bag.write<vision_slam_frontend::VisionCorrespondence>("slam_corrs",
                                                                    ros::Time::now(),
                                                                    VisionCorrespondenceToRos(corr));
+    }
+    cv_bridge::CvImage img_tranform;
+    uint64_t count = 0;
+    for (auto im: debug_images) {
+      std_msgs::Header h;
+      h.seq = count++;
+      h.stamp = ros::Time::now();
+      img_tranform.image = im;
+      img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
+      output_bag.write<sensor_msgs::Image>("slam_debug_images",
+                                           ros::Time::now(),
+                                           img_tranform.toImageMsg());
     }
     output_bag.close();
   }

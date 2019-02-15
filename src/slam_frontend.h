@@ -49,9 +49,12 @@ class FrontendConfig {
   double getNNMatchRatio() { return nn_match_ratio_; }
   uint32_t getMaxFrameLife() { return frame_life_; }
   cv::NormTypes getBFMatcherParam() { return bf_matcher_param_; }
-  void setBFMatcherParam(cv::NormTypes bf_matcher_param) { bf_matcher_param_ = 
-bf_matcher_param; }
+  void setBFMatcherParam(cv::NormTypes bf_matcher_param) {
+    bf_matcher_param_ = bf_matcher_param;
+  }
+  bool getDebug() { return debug_images_; }
  private:
+  bool debug_images_;
   DescriptorExtractorType  descriptor_extract_type_;
   double best_percent_;
   double nn_match_ratio_;
@@ -78,6 +81,7 @@ class Frame {
   FrontendConfig config_;
   std::unordered_map<uint64_t, 
                      std::pair<uint64_t, uint64_t>> initial_appearances;
+  cv::Mat debug_image_;
 };
 
 /* The actual processing unit for the entire frontend */
@@ -93,6 +97,7 @@ class Frontend {
                        double time);
   std::vector<slam_types::VisionCorrespondence> getCorrespondences();
   std::vector<slam_types::SLAMNode> getSLAMNodes();
+  std::vector<cv::Mat> getDebugImages();
  private:
   slam_types::VisionCorrespondencePair CreateVisionPair(uint64_t pose_i_idx,
                                                         uint64_t pose_j_idx,
@@ -106,6 +111,7 @@ class Frontend {
                                       const std::vector<slam_types::VisionFeature>& features,
                                       const nav_msgs::Odometry& odom_msg);
   FrontendConfig config_;
+  uint64_t curr_frame_ID_ = 0;
   nav_msgs::Odometry last_slam_odom_;
   cv::NormTypes bf_matcher_param_;
   std::vector<Frame> frame_list_;
@@ -114,7 +120,8 @@ class Frontend {
   // Formatted data for slam problem
   std::vector<slam_types::VisionCorrespondence> correspondences_;
   std::vector<slam_types::SLAMNode> nodes_;
-  uint64_t curr_frame_ID_ = 0;
+  // Debug
+  std::vector<cv::Mat> debug_images_;
 };
 }  // namespace slam
 

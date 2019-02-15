@@ -35,7 +35,7 @@ SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 # Ask ROS to compile custom message type definitions.
 rosbuild_genmsg()
 
-SET(libs roslib roscpp rosbag glog gflags opencv_xfeatures2d)
+SET(libs roslib roscpp rosbag cv_bridge glog gflags opencv_xfeatures2d)
 
 ADD_LIBRARY(shared_library
             src/gui_helpers.cc
