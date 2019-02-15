@@ -59,13 +59,12 @@ DEFINE_string(odom_topic,
               "/odometry/filtered", 
               "Name of ROS topic for odometry data");
 DEFINE_string(input, "", "Name of ROS bag file to load");
+DEFINE_string(output, "", "Name of ROS bag file to output");
 DEFINE_bool(visualize, false, "Display images loaded");
 DECLARE_string(helpon);
 DECLARE_int32(v);
 
-static nav_msgs::Odometry last_slam_odom;
-static bool slam_needed;
-static uint64_t image_num = 0;
+static nav_msgs::Odometry last_odom_msg;
 
 void CompressedImageCallback(slam::Frontend& slam_frontend,
                              sensor_msgs::CompressedImage& msg) {
@@ -82,58 +81,24 @@ void CompressedImageCallback(slam::Frontend& slam_frontend,
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
     delete [] image_channels;
   }
-  if (slam_needed) {
-    LOG(INFO) << "Observing image " << image_num << " for SLAM vision data"
-        << std::endl;
-    slam_frontend.ObserveImage(image, image_time, image_num, last_slam_odom);
-    if (FLAGS_visualize) {
-      cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
-      cv::imshow("Display Image", image);
-      if (cv::waitKey(16) == 27) {
-        exit(0);
-      }
+  slam_frontend.ObserveImage(image, image_time, last_odom_msg);
+  if (FLAGS_visualize) {
+    cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
+    cv::imshow("Display Image", image);
+    if (cv::waitKey(16) == 27) {
+      exit(0);
     }
-    slam_needed = false;
   }
-  image_num++;
-}
-
-bool OdomCheck(const nav_msgs::Odometry& new_odom) {
-    geometry_msgs::Point p;
-    p.x = new_odom.pose.pose.position.x - last_slam_odom.pose.pose.position.x;
-    p.y = new_odom.pose.pose.position.y - last_slam_odom.pose.pose.position.y;
-    p.z = new_odom.pose.pose.position.z - last_slam_odom.pose.pose.position.z;
-    if (sqrt(pow(p.x, 2) + pow(p.y, 2) + pow(p.z, 2)) >= 0.1) {
-      return true;
-    }
-    geometry_msgs::Quaternion q_old = last_slam_odom.pose.pose.orientation;
-    geometry_msgs::Quaternion q_new = last_slam_odom.pose.pose.orientation;
-    double inner_product = q_new.x * q_old.x + q_new.y * q_old.y + q_new.z * q_old.z + q_new.w * q_old.w;
-    double angle_change = acos(2 * pow(inner_product, 2) - 1);
-    if (angle_change >= 10) {
-      return true;
-    }
-    return false;
 }
 
 void OdometryCallback(const nav_msgs::Odometry& msg) {
   if (FLAGS_v > 0) {
     printf("Odometry t=%f\n", msg.header.stamp.toSec());
   }
-  if (OdomCheck(msg)) {
-    last_slam_odom = msg;
-    slam_needed = true;
-  }
+  last_odom_msg = msg;
 }
 
 void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
-  // Setup ROS Communication
-  ros::Rate LoopRate(100);
-  ros::Publisher node_pub =
-      n->advertise<vision_slam_frontend::SLAMNode>("slam_nodes", 1000);
-  ros::Publisher corr_pub =
-      n->advertise<vision_slam_frontend::VisionCorrespondence>("slam_corr", 1000);
-  // Open/process bag file
   rosbag::Bag bag;
   try {
     bag.open(filename,rosbag::bagmode::Read);
@@ -147,10 +112,9 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   topics.push_back(FLAGS_odom_topic.c_str());
   rosbag::View view(bag, rosbag::TopicQuery(topics));
   slam::Frontend slam_frontend(*n, "");
-  last_slam_odom.pose.pose.position = geometry_msgs::Point();
   double bag_t_start = -1;
   // Iterate for every message.
-  int max_frame = 0;
+  uint64_t max_frame = 0;
   for (rosbag::View::iterator it = view.begin();
        ros::ok() && it != view.end();
        ++it) {
@@ -183,17 +147,29 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   }
   printf("Done processing bag file.\n");
   // Publish slam data
-  if (false) {
+  if (FLAGS_output != "") {
+    rosbag::Bag output_bag;
+    try {
+      output_bag.open(FLAGS_output.c_str(), rosbag::bagmode::Write);
+    } catch(rosbag::BagException exception) {
+      printf("Unable to open %s, reason:\n %s\n", 
+             FLAGS_output.c_str(), 
+             exception.what());
+      return;
+    }
     std::vector<slam_types::SLAMNode> nodes = slam_frontend.getSLAMNodes();
     std::vector<slam_types::VisionCorrespondence> corrs = slam_frontend.getCorrespondences();
     for (auto node : nodes) {
-      node_pub.publish<vision_slam_frontend::SLAMNode>(SLAMNodeToRos(node));
-      ros::spinOnce();
+      output_bag.write<vision_slam_frontend::SLAMNode>("slam_nodes",
+                                                       ros::Time::now(),
+                                                       SLAMNodeToRos(node));
     }
     for (auto corr : corrs) {
-      corr_pub.publish<vision_slam_frontend::VisionCorrespondence>(VisionCorrespondenceToRos(corr));
-      ros::spinOnce();
+      output_bag.write<vision_slam_frontend::VisionCorrespondence>("slam_corrs",
+                                                                   ros::Time::now(),
+                                                                   VisionCorrespondenceToRos(corr));
     }
+    output_bag.close();
   }
 }
 

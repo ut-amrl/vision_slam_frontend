@@ -87,7 +87,6 @@ class Frontend {
   // Observe a new image. Extract features, and match to past frames.
   void ObserveImage(const cv::Mat& image, 
                     double time,
-                    uint64_t frame_ID,
                     const nav_msgs::Odometry& odom_msg);
   void ObserveOdometry(const Eigen::Vector3f& translation,
                        const Eigen::Quaternionf& rotation,
@@ -107,6 +106,7 @@ class Frontend {
                                       const std::vector<slam_types::VisionFeature>& features,
                                       const nav_msgs::Odometry& odom_msg);
   FrontendConfig config_;
+  nav_msgs::Odometry last_slam_odom_;
   cv::NormTypes bf_matcher_param_;
   std::vector<Frame> frame_list_;
   cv::Ptr<cv::Feature2D> descriptor_extractor_;
@@ -114,6 +114,7 @@ class Frontend {
   // Formatted data for slam problem
   std::vector<slam_types::VisionCorrespondence> correspondences_;
   std::vector<slam_types::SLAMNode> nodes_;
+  uint64_t curr_frame_ID_ = 0;
 };
 }  // namespace slam
 

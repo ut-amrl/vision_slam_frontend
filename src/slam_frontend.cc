@@ -39,7 +39,26 @@ using Eigen::Vector3f;
 
 /* --- Frontend Implementation Code --- */
 
+bool OdomCheck(const nav_msgs::Odometry& last_slam_odom, nav_msgs::Odometry& new_odom) {
+    geometry_msgs::Point p;
+    p.x = new_odom.pose.pose.position.x - last_slam_odom.pose.pose.position.x;
+    p.y = new_odom.pose.pose.position.y - last_slam_odom.pose.pose.position.y;
+    p.z = new_odom.pose.pose.position.z - last_slam_odom.pose.pose.position.z;
+    if (sqrt(pow(p.x, 2) + pow(p.y, 2) + pow(p.z, 2)) >= 0.1) {
+      return true;
+    }
+    geometry_msgs::Quaternion q_old = last_slam_odom.pose.pose.orientation;
+    geometry_msgs::Quaternion q_new = last_slam_odom.pose.pose.orientation;
+    double inner_product = q_new.x * q_old.x + q_new.y * q_old.y + q_new.z * q_old.z + q_new.w * q_old.w;
+    double angle_change = acos(2 * pow(inner_product, 2) - 1);
+    if (angle_change >= 10) {
+      return true;
+    }
+    return false;
+}
+
 slam::Frontend::Frontend(ros::NodeHandle& n, const std::string& config_path) {
+  last_slam_odom_.pose.pose.position = geometry_msgs::Point();
   fast_feature_detector_ = cv::FastFeatureDetector::create(10, true);
   switch(config_.getDescExType()) {
     case FrontendConfig::DescriptorExtractorType::AKAZE:
@@ -79,8 +98,15 @@ slam::Frontend::Frontend(ros::NodeHandle& n, const std::string& config_path) {
 
 void slam::Frontend::ObserveImage(const cv::Mat& image,
                                   double time,
-                                  uint64_t frame_ID,
                                   const nav_msgs::Odometry& odom_msg) {
+  // Check from the odometry if its time to run SLAM
+  if(!OdomCheck(odom_msg, last_slam_odom_)) {
+    curr_frame_ID_++;
+    return;
+  } else {
+    curr_frame_ID_++;
+    last_slam_odom_ = odom_msg;
+  }
   std::vector<cv::KeyPoint> frame_keypoints;
   cv::Mat frame_descriptors;
   if (config_.getDescExType() == FrontendConfig::DescriptorExtractorType::FREAK) {
@@ -93,9 +119,9 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
                                             frame_descriptors);
   }
   Frame curr_frame(frame_keypoints,
-                   frame_descriptors, 
-                   config_, 
-                   frame_ID);
+                   frame_descriptors,
+                   config_,
+                   curr_frame_ID_);
   for(uint32_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
     std::vector<slam_types::VisionCorrespondencePair> pairs;
     Frame& past_frame = frame_list_[frame_num];
