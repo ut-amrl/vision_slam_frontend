@@ -7,6 +7,8 @@
 #include "vision_slam_frontend/VisionCorrespondencePair.h"
 #include "vision_slam_frontend/VisionFeature.h"
 #include "slam_types.h"
+#include <geometry_msgs/Quaternion.h>
+#include <geometry_msgs/Vector3.h>
 
 static vision_slam_frontend::VisionCorrespondencePair
 VisionCorrespondencePairToRos(const slam_types::VisionCorrespondencePair& pair) {
@@ -30,12 +32,26 @@ VisionFeatureToRos(const slam_types::VisionFeature& feature) {
   return ros_feature;
 }
 
+static vision_slam_frontend::RobotPose
+RobotPoseToRos(const slam_types::RobotPose& rp) {
+  vision_slam_frontend::RobotPose ros_rp;
+  auto loc = rp.loc;
+  ros_rp.loc.x = loc[0];
+  ros_rp.loc.y = loc[1]; 
+  ros_rp.loc.z = loc[2];
+  auto axis = rp.angle.axis();
+  ros_rp.angle.w = rp.angle.angle();
+  ros_rp.angle.x = axis[0];
+  ros_rp.angle.y = axis[1];
+  ros_rp.angle.z = axis[2];
+  return ros_rp;
+}
+
 static vision_slam_frontend::SLAMNode
 SLAMNodeToRos(const slam_types::SLAMNode& node) {
   vision_slam_frontend::SLAMNode ros_node;
   ros_node.id = node.id;
-  // Add robot pose when used.
-  // ros_node.pose = node.pose;
+  ros_node.pose = RobotPoseToRos(node.pose);
   for (auto p: node.features) {
     ros_node.features.push_back(VisionFeatureToRos(p));
   }

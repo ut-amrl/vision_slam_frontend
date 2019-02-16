@@ -236,7 +236,13 @@ slam::Frontend::CreateSLAMNode(uint64_t pose_i,
   node.id = pose_i;
   node.is_vision_node = true;
   node.features = features;
-  //node.pose = odom_msg.pose.pose;
+  auto loc = odom_msg.pose.pose.position;
+  auto orient = odom_msg.pose.pose.orientation;
+  node.pose = slam_types::RobotPose(Vector3f(loc.x, loc.y, loc.z), 
+                                    AngleAxisf(Quaternionf(orient.w,
+                                                           orient.x,
+                                                           orient.y,
+                                                           orient.z)));
   return node;
 }
 
