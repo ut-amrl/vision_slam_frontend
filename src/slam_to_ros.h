@@ -25,8 +25,8 @@ VisionFeatureToRos(const slam_types::VisionFeature& feature) {
   vision_slam_frontend::VisionFeature ros_feature;
   ros_feature.descriptor_id = feature.descriptor_id;
   ros_feature.id = feature.id;
-  ros_feature.pixel.x = feature.pixel[0];
-  ros_feature.pixel.y = feature.pixel[1];
+  ros_feature.pixel.x = feature.pixel.x();
+  ros_feature.pixel.y = feature.pixel.y();
   ros_feature.pixel.z = 0;
   //Add Feature Point when used.
   return ros_feature;
@@ -35,15 +35,13 @@ VisionFeatureToRos(const slam_types::VisionFeature& feature) {
 static vision_slam_frontend::RobotPose
 RobotPoseToRos(const slam_types::RobotPose& rp) {
   vision_slam_frontend::RobotPose ros_rp;
-  auto loc = rp.loc;
-  ros_rp.loc.x = loc[0];
-  ros_rp.loc.y = loc[1]; 
-  ros_rp.loc.z = loc[2];
-  auto axis = rp.angle.axis();
-  ros_rp.angle.w = rp.angle.angle();
-  ros_rp.angle.x = axis[0];
-  ros_rp.angle.y = axis[1];
-  ros_rp.angle.z = axis[2];
+  ros_rp.loc.x = rp.loc.x();
+  ros_rp.loc.y = rp.loc.y();
+  ros_rp.loc.z = rp.loc.z();
+  ros_rp.angle.w = rp.angle.w();
+  ros_rp.angle.x = rp.angle.x();
+  ros_rp.angle.y = rp.angle.y();
+  ros_rp.angle.z = rp.angle.z();
   return ros_rp;
 }
 
@@ -55,7 +53,6 @@ SLAMNodeToRos(const slam_types::SLAMNode& node) {
   for (auto p: node.features) {
     ros_node.features.push_back(VisionFeatureToRos(p));
   }
-  ros_node.is_vision_node = node.is_vision_node;
   return ros_node;
 }
 

@@ -30,8 +30,6 @@
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 #include "opencv2/opencv.hpp"
-#include "ros/ros.h"
-#include "nav_msgs/Odometry.h"
 
 #include "slam_types.h"
 
@@ -92,8 +90,7 @@ class Frontend {
   explicit Frontend(const std::string& config_path);
   // Observe a new image. Extract features, and match to past frames.
   void ObserveImage(const cv::Mat& image,
-                    double time,
-                    const nav_msgs::Odometry& odom_msg);
+                    double time);
   // Observe new odometry message.
   void ObserveOdometry(const Eigen::Vector3f& translation,
                        const Eigen::Quaternionf& rotation,
@@ -103,43 +100,26 @@ class Frontend {
   std::vector<cv::Mat> getDebugImages();
 
  private:
-  slam_types::VisionCorrespondencePair CreateVisionPair(
-      uint64_t pose_i_idx,
-      uint64_t pose_j_idx,
-      uint64_t pose_initial,
-      uint64_t pose_initial_idx);
-  slam_types::VisionCorrespondence CreateVisionCorrespondence(
-      uint64_t pose_i,
-      uint64_t pose_j,
-      const std::vector<slam_types::VisionCorrespondencePair> pairs);
-  slam_types::VisionFeature CreateVisionFeature(uint64_t id, cv::Point2f pixel);
-  slam_types::SLAMNode CreateSLAMNode(
-      uint64_t pose_i,
-      const std::vector<slam_types::VisionFeature>& features,
-      const nav_msgs::Odometry& odom_msg);
-
   // Returns true iff odometry reports that the robot has moved sufficiently to
   // warrant a vision update.
   bool OdomCheck();
 
   // Indicates if odometry has been initialized or not.
   bool odom_initialized_;
-
   // Previous odometry-reported pose translation.
   Eigen::Vector3f prev_odom_translation_;
   // Previous odometry-reported pose rotation.
   Eigen::Quaternionf prev_odom_rotation_;
-
   // Latest odometry-reported pose translation.
   Eigen::Vector3f odom_translation_;
   // Latest odometry-reported pose rotation.
   Eigen::Quaternionf odom_rotation_;
   // Latest odometry timestamp.
   double odom_timestamp_;
-
+  // Configuration parameters for frontend.
   FrontendConfig config_;
-  uint64_t curr_frame_ID_ = 0;
-  nav_msgs::Odometry last_slam_odom_;
+  // Next frame ID.
+  uint64_t curr_frame_ID_;
   cv::NormTypes bf_matcher_param_;
   std::vector<Frame> frame_list_;
   cv::Ptr<cv::Feature2D> descriptor_extractor_;

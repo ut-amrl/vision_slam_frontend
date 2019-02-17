@@ -29,15 +29,6 @@
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 
-using Eigen::Affine3f;
-using Eigen::AngleAxisf;
-using Eigen::Quaternionf;
-using Eigen::Matrix2f;
-using Eigen::Matrix3f;
-using Eigen::Translation3f;
-using Eigen::Vector2f;
-using Eigen::Vector3f;
-
 namespace slam_types {
 
 struct VisionFeature {
@@ -47,17 +38,14 @@ struct VisionFeature {
   // descriptor type.
   uint64_t descriptor_id;
   // Camera pixel location of feature.
-  Vector2f pixel;
-  // Ground truth 3D location of feature points, in local coordinate frame.
-  Vector3f point;
+  Eigen::Vector2f pixel;
   // Default constructor: do nothing.
   VisionFeature() {}
   // Convenience constructor: initialize everything.
   VisionFeature(uint64_t id,
                 uint64_t descriptor_id,
-                const Vector2f& p,
-                const Vector3f& ground_truth) :
-      id(id), descriptor_id(descriptor_id), pixel(p), point(ground_truth) {}
+                const Eigen::Vector2f& p) :
+      id(id), descriptor_id(descriptor_id), pixel(p) {}
 };
 
 struct VisionCorrespondencePair {
@@ -69,6 +57,17 @@ struct VisionCorrespondencePair {
   uint64_t pose_i_id;
   //feature ID from second pose.
   uint64_t pose_j_id;
+  // Default constructor: do nothing.
+  VisionCorrespondencePair() {}
+  // Convenience constructor: initialize everything.
+  VisionCorrespondencePair(uint64_t pose_i_idx,
+                           uint64_t pose_j_idx,
+                           uint64_t pose_initial,
+                           uint64_t pose_initial_idx) :
+      pose_initial(pose_initial),
+      pose_initial_id(pose_initial_idx),
+      pose_i_id(pose_i_idx),
+      pose_j_id(pose_j_idx) {}
 };
 
 struct VisionCorrespondence {
@@ -79,19 +78,29 @@ struct VisionCorrespondence {
   // Pair of feature ID from first pose, and feature ID from second pose,
   // and feature ID from initial pose.
   std::vector<VisionCorrespondencePair> feature_matches;
+  // Default constructor: do nothing.
+  VisionCorrespondence() {}
+  // Convenience constructor: initialize everything.
+  VisionCorrespondence(
+      uint64_t pose_i,
+      uint64_t pose_j,
+      const std::vector<slam_types::VisionCorrespondencePair>& pairs) :
+      pose_i(pose_i), pose_j(pose_j), feature_matches(pairs) {}
 };
 
 struct RobotPose {
   // Timestamp.
   double timestamp;
   // Robot location.
-  Vector3f loc;
+  Eigen::Vector3f loc;
   // Robot angle: rotates points from robot frame to global.
-  AngleAxisf angle;
+  Eigen::Quaternionf angle;
   // Default constructor: do nothing.
   RobotPose() {}
   // Convenience constructor: initialize everything.
-  RobotPose(double t, const Vector3f& loc, const AngleAxisf& angle) :
+  RobotPose(double t,
+            const Eigen::Vector3f& loc,
+            const Eigen::Quaternionf& angle) :
       timestamp(t), loc(loc), angle(angle) {}
   // Return a transform from the robot to the world frame for this pose.
   Eigen::Affine3f RobotToWorldTf() const {
@@ -110,13 +119,9 @@ struct OdometryCorrespondence {
   // ID of second pose.
   uint64_t pose_j;
   // Translation to go from pose i to pose j.
-  Vector3f translation;
+  Eigen::Vector3f translation;
   // Rotation to go from pose i to pose j.
-  Vector3f rotation;
-  // Translation covariance.
-  Matrix3f translation_covariance;
-  // Rotation covariance, in angle-axis form.
-  Matrix3f rotation_covariance;
+  Eigen::Quaternionf rotation;
 };
 
 struct SLAMNode {
@@ -126,15 +131,13 @@ struct SLAMNode {
   RobotPose pose;
   // Observed vision features.
   std::vector<VisionFeature> features;
-  // Indicates whether this node should have any visual features or not.
-  bool is_vision_node;
   // Default constructor: do nothing.
   SLAMNode() {}
   // Convenience constructor, initialize all components.
   SLAMNode(uint64_t id,
            const RobotPose& pose,
-           bool is_vision) :
-      id(id), pose(pose), features(), is_vision_node(is_vision) {}
+           const std::vector<VisionFeature>& features) :
+      id(id), pose(pose), features(features) {}
 };
 
 struct SLAMProblem {

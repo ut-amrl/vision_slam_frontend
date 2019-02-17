@@ -32,15 +32,19 @@
 #include "opencv2/imgproc.hpp"
 #include "opencv2/xfeatures2d.hpp"
 #include "glog/logging.h"
-#include "nav_msgs/Odometry.h"
 
 #include "slam_frontend.h"
 
-using nav_msgs::Odometry;
+using slam_types::RobotPose;
+using slam_types::SLAMNode;
+using slam_types::SLAMProblem;
+using slam_types::VisionCorrespondence;
+using slam_types::VisionCorrespondencePair;
 using slam_types::VisionFeature;
 using std::string;
 using std::vector;
 using Eigen::Quaternionf;
+using Eigen::Vector2f;
 using Eigen::Vector3f;
 
 /* --- Frontend Implementation Code --- */
@@ -49,7 +53,7 @@ namespace slam {
 
 cv::Mat CreateDebugImage(const Frame& frame_one,
                          const Frame& frame_two,
-                         const slam_types::VisionCorrespondence& corr) {
+                         const VisionCorrespondence& corr) {
   cv::Mat return_image = frame_one.debug_image_.clone();
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
   for (auto c : corr.feature_matches) {
@@ -77,42 +81,62 @@ bool Frontend::OdomCheck() {
   return false;
 }
 
-Frontend::Frontend (const string& config_path) {
-  last_slam_odom_.pose.pose.position = geometry_msgs::Point();
+Frontend::Frontend(const string& config_path) :
+    odom_initialized_(false),
+    curr_frame_ID_(0) {
   fast_feature_detector_ = cv::FastFeatureDetector::create(10, true);
   switch (config_.descriptor_extract_type_) {
-    case FrontendConfig::DescriptorExtractorType::AKAZE:
+    case FrontendConfig::DescriptorExtractorType::AKAZE: {
       descriptor_extractor_ = cv::AKAZE::create(cv::AKAZE::DESCRIPTOR_MLDB,
-                                                0, 3, 0.0001f, 10, 5,
+                                                0,
+                                                3,
+                                                0.0001f,
+                                                10,
+                                                5,
                                                 cv::KAZE::DIFF_PM_G2);
       bf_matcher_param_ = cv::NORM_HAMMING;
       break;
-    case FrontendConfig::DescriptorExtractorType::ORB:
-      descriptor_extractor_ = cv::ORB::create(10000, 1.04f, 50, 31, 0, 2,
+    }
+    case FrontendConfig::DescriptorExtractorType::ORB: {
+      descriptor_extractor_ = cv::ORB::create(10000,
+                                              1.04f,
+                                              50,
+                                              31,
+                                              0,
+                                              2,
                                               cv::ORB::HARRIS_SCORE,
-                                              31, 20);
+                                              31,
+                                              20);
       bf_matcher_param_ = cv::NORM_HAMMING;
       break;
-    case FrontendConfig::DescriptorExtractorType::BRISK:
+    }
+    case FrontendConfig::DescriptorExtractorType::BRISK: {
       descriptor_extractor_ = cv::BRISK::create(20, 7, 1.1f);
       bf_matcher_param_ = cv::NORM_HAMMING;
       break;
-    case FrontendConfig::DescriptorExtractorType::SURF:
+    }
+    case FrontendConfig::DescriptorExtractorType::SURF: {
       descriptor_extractor_ = cv::xfeatures2d::SURF::create();
       bf_matcher_param_ = cv::NORM_L2;
       break;
-    case FrontendConfig::DescriptorExtractorType::SIFT:
+    }
+    case FrontendConfig::DescriptorExtractorType::SIFT: {
       descriptor_extractor_ = cv::xfeatures2d::SIFT::create();
       bf_matcher_param_ = cv::NORM_L2;
       break;
-    case FrontendConfig::DescriptorExtractorType::FREAK:
-      descriptor_extractor_ = cv::xfeatures2d::FREAK::create(false, true,
-                                                             40.0f, 20);
+    }
+    case FrontendConfig::DescriptorExtractorType::FREAK: {
+      descriptor_extractor_ = cv::xfeatures2d::FREAK::create(false,
+                                                             true,
+                                                             40.0f,
+                                                             20);
       bf_matcher_param_ = cv::NORM_HAMMING;
       break;
-    default:
+    }
+    default: {
       LOG(ERROR) << "Could not recognize descriptor extractor option.";
       exit(1);
+    }
   }
 }
 
@@ -125,17 +149,12 @@ void Frontend::ObserveOdometry(const Vector3f& translation,
 }
 
 void Frontend::ObserveImage(const cv::Mat& image,
-                                  double time,
-                                  const nav_msgs::Odometry& odom_msg) {
+                            double time) {
   // Check from the odometry if its time to run SLAM
   if (!OdomCheck()) {
-    curr_frame_ID_++;
     return;
-  } else {
-    curr_frame_ID_++;
-    last_slam_odom_ = odom_msg;
   }
-  std::vector<cv::KeyPoint> frame_keypoints;
+  vector<cv::KeyPoint> frame_keypoints;
   cv::Mat frame_descriptors;
   if (config_.descriptor_extract_type_ ==
       FrontendConfig::DescriptorExtractorType::FREAK) {
@@ -154,10 +173,10 @@ void Frontend::ObserveImage(const cv::Mat& image,
   if (config_.debug_images_) {
     curr_frame.debug_image_ = image;
   }
-  for (uint32_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
-    std::vector<slam_types::VisionCorrespondencePair> pairs;
+  for (size_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
+    vector<VisionCorrespondencePair> pairs;
     Frame& past_frame = frame_list_[frame_num];
-    std::vector<cv::DMatch> matches =
+    vector<cv::DMatch> matches =
         curr_frame.GetMatches(past_frame, config_.nn_match_ratio_);
     std::sort(matches.begin(), matches.end());
     const int num_good_matches = matches.size() * config_.best_percent_;
@@ -167,20 +186,31 @@ void Frontend::ObserveImage(const cv::Mat& image,
       std::pair<uint64_t, uint64_t> initial = past_frame.GetInitialFrame(match);
       // Add it to the original frame.
       curr_frame.AddMatchInitial(match, initial);
-      pairs.push_back(CreateVisionPair(match.trainIdx,
-                                       match.queryIdx,
-                                       initial.first,
-                                       initial.second));
+      pairs.push_back(VisionCorrespondencePair(match.trainIdx,
+                                               match.queryIdx,
+                                               initial.first,
+                                               initial.second));
     }
-    correspondences_.push_back(CreateVisionCorrespondence(past_frame.frame_ID_,
-                                                         curr_frame.frame_ID_,
-                                                         pairs));
+    correspondences_.push_back(VisionCorrespondence(past_frame.frame_ID_,
+                                                    curr_frame.frame_ID_,
+                                                    pairs));
   }
-  std::vector<slam_types::VisionFeature> features;
+  vector<VisionFeature> features;
   for (uint64_t i = 0; i < curr_frame.keypoints_.size(); i++) {
-    features.push_back(CreateVisionFeature(i, curr_frame.keypoints_[i].pt));
+    features.push_back(VisionFeature(
+        0,
+        i,
+        Vector2f(curr_frame.keypoints_[i].pt.x, curr_frame.keypoints_[i].pt.y)
+    ));
   }
-  nodes_.push_back(CreateSLAMNode(curr_frame.frame_ID_, features, odom_msg));
+  nodes_.push_back(SLAMNode(curr_frame_ID_,
+                            RobotPose(odom_timestamp_,
+                                      odom_translation_,
+                                      odom_rotation_),
+                            features));
+  prev_odom_rotation_ = odom_rotation_;
+  prev_odom_translation_ = odom_translation_;
+  curr_frame_ID_++;
   if (config_.debug_images_ && !frame_list_.empty()) {
     debug_images_.push_back(CreateDebugImage(curr_frame,
                                              frame_list_.back(),
@@ -192,78 +222,21 @@ void Frontend::ObserveImage(const cv::Mat& image,
   frame_list_.push_back(curr_frame);
 }
 
-std::vector<slam_types::VisionCorrespondence>
-Frontend::getCorrespondences() {
+vector<VisionCorrespondence> Frontend::getCorrespondences() {
   return correspondences_;
 }
 
-std::vector<slam_types::SLAMNode>
-Frontend::getSLAMNodes() {
+vector<SLAMNode> Frontend::getSLAMNodes() {
   return nodes_;
 }
 
-std::vector<cv::Mat>
-Frontend::getDebugImages() {
+vector<cv::Mat> Frontend::getDebugImages() {
   return debug_images_;
-}
-
-slam_types::VisionCorrespondencePair
-Frontend::CreateVisionPair(uint64_t pose_i_idx,
-                                 uint64_t pose_j_idx,
-                                 uint64_t pose_initial,
-                                 uint64_t pose_initial_idx) {
-  slam_types::VisionCorrespondencePair pair;
-  pair.pose_i_id = pose_i_idx;
-  pair.pose_j_id = pose_j_idx;
-  pair.pose_initial = pose_initial;
-  pair.pose_initial_id = pose_initial_idx;
-  return pair;
-}
-
-slam_types::VisionCorrespondence
-Frontend::CreateVisionCorrespondence(uint64_t pose_i,
-                                     uint64_t pose_j,
-                                     const
-std::vector<slam_types::VisionCorrespondencePair> pairs) {
-  slam_types::VisionCorrespondence corr;
-  corr.pose_i = pose_i;
-  corr.pose_j = pose_j;
-  corr.feature_matches = pairs;
-  return corr;
-}
-
-slam_types::VisionFeature
-Frontend::CreateVisionFeature(uint64_t id, cv::Point2f pixel) {
-  slam_types::VisionFeature vis;
-  vis.id = id;
-  vis.descriptor_id = 0;
-  vis.pixel = Vector2f(pixel.x, pixel.y);
-  return vis;
-}
-
-slam_types::SLAMNode
-Frontend::CreateSLAMNode(uint64_t pose_i,
-                               const vector<VisionFeature>&  features,
-                               const Odometry& odom_msg) {
-  slam_types::SLAMNode node;
-  node.id = pose_i;
-  node.is_vision_node = true;
-  node.features = features;
-  auto loc = odom_msg.pose.pose.position;
-  auto orient = odom_msg.pose.pose.orientation;
-  printf("%s:%d TODO: Pose timestamp\n", __FILE__, __LINE__);
-  node.pose = slam_types::RobotPose(0,
-    Vector3f(loc.x, loc.y, loc.z),
-                                    AngleAxisf(Quaternionf(orient.w,
-                                                           orient.x,
-                                                           orient.y,
-                                                           orient.z)));
-  return node;
 }
 
 /* --- Frame Implementation Code --- */
 
-Frame::Frame(const std::vector<cv::KeyPoint>& keypoints,
+Frame::Frame(const vector<cv::KeyPoint>& keypoints,
                    const cv::Mat& descriptors,
                    const FrontendConfig& config,
                    uint64_t frame_ID) {
@@ -274,11 +247,11 @@ Frame::Frame(const std::vector<cv::KeyPoint>& keypoints,
   matcher_ = cv::BFMatcher::create(config_.bf_matcher_param_);
 }
 
-std::vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
+vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
                                                 double nn_match_ratio) {
-  std::vector<std::vector<cv::DMatch>> matches;
+  vector<vector<cv::DMatch>> matches;
   matcher_->knnMatch(descriptors_, frame.descriptors_, matches, 2);
-  std::vector<cv::DMatch> best_matches;
+  vector<cv::DMatch> best_matches;
   for (size_t i = 0; i < matches.size(); i++) {
     cv::DMatch first = matches[i][0];
     float dist1 = matches[i][0].distance;

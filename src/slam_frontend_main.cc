@@ -66,8 +66,6 @@ DEFINE_bool(visualize, false, "Display images loaded");
 DECLARE_string(helpon);
 DECLARE_int32(v);
 
-static nav_msgs::Odometry last_odom_msg;
-
 void CompressedImageCallback(sensor_msgs::CompressedImage& msg,
                              Frontend* frontend) {
   double image_time = msg.header.stamp.toSec();
@@ -83,7 +81,7 @@ void CompressedImageCallback(sensor_msgs::CompressedImage& msg,
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
     delete [] image_channels;
   }
-  frontend->ObserveImage(image, image_time, last_odom_msg);
+  frontend->ObserveImage(image, image_time);
   if (FLAGS_visualize) {
     cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
     cv::imshow("Display Image", image);
@@ -106,7 +104,6 @@ void OdometryCallback(const nav_msgs::Odometry& msg,
                                 msg.pose.pose.orientation.y,
                                 msg.pose.pose.orientation.z);
   frontend->ObserveOdometry(odom_loc, odom_angle, msg.header.stamp.toSec());
-  last_odom_msg = msg;
 }
 
 void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
