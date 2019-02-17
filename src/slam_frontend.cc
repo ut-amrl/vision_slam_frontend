@@ -143,6 +143,11 @@ Frontend::Frontend(const string& config_path) :
 void Frontend::ObserveOdometry(const Vector3f& translation,
                                const Quaternionf& rotation,
                                double timestamp) {
+  if (!odom_initialized_) {
+    prev_odom_rotation_ = odom_rotation_;
+    prev_odom_translation_ = odom_translation_;
+    odom_initialized_ = true;
+  }
   odom_translation_ = translation;
   odom_rotation_ = rotation;
   odom_timestamp_ = timestamp;
@@ -237,9 +242,9 @@ vector<cv::Mat> Frontend::getDebugImages() {
 /* --- Frame Implementation Code --- */
 
 Frame::Frame(const vector<cv::KeyPoint>& keypoints,
-                   const cv::Mat& descriptors,
-                   const FrontendConfig& config,
-                   uint64_t frame_ID) {
+             const cv::Mat& descriptors,
+             const FrontendConfig& config,
+             uint64_t frame_ID) {
   keypoints_ = keypoints;
   descriptors_ = descriptors;
   config_ = config;
