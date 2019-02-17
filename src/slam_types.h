@@ -82,6 +82,8 @@ struct VisionCorrespondence {
 };
 
 struct RobotPose {
+  // Timestamp.
+  double timestamp;
   // Robot location.
   Vector3f loc;
   // Robot angle: rotates points from robot frame to global.
@@ -89,8 +91,8 @@ struct RobotPose {
   // Default constructor: do nothing.
   RobotPose() {}
   // Convenience constructor: initialize everything.
-  RobotPose(const Vector3f& loc, const AngleAxisf& angle) :
-      loc(loc), angle(angle) {}
+  RobotPose(double t, const Vector3f& loc, const AngleAxisf& angle) :
+      timestamp(t), loc(loc), angle(angle) {}
   // Return a transform from the robot to the world frame for this pose.
   Eigen::Affine3f RobotToWorldTf() const {
     return (Eigen::Translation3f(loc) * angle);

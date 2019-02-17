@@ -22,6 +22,11 @@
 #ifndef __SLAM_FRONTEND_H__
 #define __SLAM_FRONTEND_H__
 
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 #include "opencv2/opencv.hpp"
@@ -32,10 +37,10 @@
 
 namespace slam {
 /* A container for slam configuration data */
-class FrontendConfig {
+struct FrontendConfig {
  public:
-  enum DescriptorExtractorType {
-    AKAZE, 
+  enum class DescriptorExtractorType {
+    AKAZE,
     ORB,
     BRISK,
     SURF,
@@ -44,20 +49,17 @@ class FrontendConfig {
   };
   FrontendConfig();
   void Load(const std::string& path);
-  DescriptorExtractorType getDescExType() { return descriptor_extract_type_; }
-  double getBestPercent() { return best_percent_; }
-  double getNNMatchRatio() { return nn_match_ratio_; }
-  uint32_t getMaxFrameLife() { return frame_life_; }
-  cv::NormTypes getBFMatcherParam() { return bf_matcher_param_; }
-  void setBFMatcherParam(cv::NormTypes bf_matcher_param) {
-    bf_matcher_param_ = bf_matcher_param;
-  }
-  bool getDebug() { return debug_images_; }
- private:
+
   bool debug_images_;
   DescriptorExtractorType  descriptor_extract_type_;
-  double best_percent_;
-  double nn_match_ratio_;
+  float best_percent_;
+  float nn_match_ratio_;
+  // If the robot translates by this much, as reported by odometry, the next
+  // image will be used for a vision frame.
+  float min_odom_translation;
+  // If the robot rotates by this much, as reported by odometry, the next
+  // image will be used for a vision frame.
+  float min_odom_rotation;
   uint32_t frame_life_;
   cv::NormTypes bf_matcher_param_;
 };
@@ -72,14 +74,14 @@ class Frame {
   std::vector<cv::DMatch> GetMatches(const slam::Frame& frame,
                                      double nn_match_ratio);
   std::pair<uint64_t, uint64_t> GetInitialFrame(cv::DMatch match_idx);
-  void AddMatchInitial(cv::DMatch match, 
+  void AddMatchInitial(cv::DMatch match,
                        std::pair<uint64_t, uint64_t> initial);
   uint64_t frame_ID_;
   cv::Ptr<cv::BFMatcher> matcher_;
   std::vector<cv::KeyPoint> keypoints_;
   cv::Mat descriptors_;
   FrontendConfig config_;
-  std::unordered_map<uint64_t, 
+  std::unordered_map<uint64_t,
                      std::pair<uint64_t, uint64_t>> initial_appearances;
   cv::Mat debug_image_;
 };
@@ -87,29 +89,54 @@ class Frame {
 /* The actual processing unit for the entire frontend */
 class Frontend {
  public:
-  Frontend(ros::NodeHandle& n, const std::string& config_path);
+  explicit Frontend(const std::string& config_path);
   // Observe a new image. Extract features, and match to past frames.
-  void ObserveImage(const cv::Mat& image, 
+  void ObserveImage(const cv::Mat& image,
                     double time,
                     const nav_msgs::Odometry& odom_msg);
+  // Observe new odometry message.
   void ObserveOdometry(const Eigen::Vector3f& translation,
                        const Eigen::Quaternionf& rotation,
-                       double time);
+                       double timestamp);
   std::vector<slam_types::VisionCorrespondence> getCorrespondences();
   std::vector<slam_types::SLAMNode> getSLAMNodes();
   std::vector<cv::Mat> getDebugImages();
+
  private:
-  slam_types::VisionCorrespondencePair CreateVisionPair(uint64_t pose_i_idx,
-                                                        uint64_t pose_j_idx,
-                                                        uint64_t pose_initial,
-                                                        uint64_t pose_initial_idx);
-  slam_types::VisionCorrespondence CreateVisionCorrespondence(uint64_t pose_i,
-                                                               uint64_t pose_j,
-                                                               const std::vector<slam_types::VisionCorrespondencePair> pairs);
+  slam_types::VisionCorrespondencePair CreateVisionPair(
+      uint64_t pose_i_idx,
+      uint64_t pose_j_idx,
+      uint64_t pose_initial,
+      uint64_t pose_initial_idx);
+  slam_types::VisionCorrespondence CreateVisionCorrespondence(
+      uint64_t pose_i,
+      uint64_t pose_j,
+      const std::vector<slam_types::VisionCorrespondencePair> pairs);
   slam_types::VisionFeature CreateVisionFeature(uint64_t id, cv::Point2f pixel);
-  slam_types::SLAMNode CreateSLAMNode(uint64_t pose_i,
-                                      const std::vector<slam_types::VisionFeature>& features,
-                                      const nav_msgs::Odometry& odom_msg);
+  slam_types::SLAMNode CreateSLAMNode(
+      uint64_t pose_i,
+      const std::vector<slam_types::VisionFeature>& features,
+      const nav_msgs::Odometry& odom_msg);
+
+  // Returns true iff odometry reports that the robot has moved sufficiently to
+  // warrant a vision update.
+  bool OdomCheck();
+
+  // Indicates if odometry has been initialized or not.
+  bool odom_initialized_;
+
+  // Previous odometry-reported pose translation.
+  Eigen::Vector3f prev_odom_translation_;
+  // Previous odometry-reported pose rotation.
+  Eigen::Quaternionf prev_odom_rotation_;
+
+  // Latest odometry-reported pose translation.
+  Eigen::Vector3f odom_translation_;
+  // Latest odometry-reported pose rotation.
+  Eigen::Quaternionf odom_rotation_;
+  // Latest odometry timestamp.
+  double odom_timestamp_;
+
   FrontendConfig config_;
   uint64_t curr_frame_ID_ = 0;
   nav_msgs::Odometry last_slam_odom_;

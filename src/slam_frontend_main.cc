@@ -48,16 +48,17 @@
 #include "slam_to_ros.h"
 
 using ros::Time;
-using std::string; 
+using slam::Frontend;
+using std::string;
 using std::vector;
 using Eigen::Quaternionf;
 using Eigen::Vector3f;
 
-DEFINE_string(image_topic, 
+DEFINE_string(image_topic,
               "/camera_right/image_raw/compressed",
               "Name of ROS topic for image data");
 DEFINE_string(odom_topic,
-              "/odometry/filtered", 
+              "/odometry/filtered",
               "Name of ROS topic for odometry data");
 DEFINE_string(input, "", "Name of ROS bag file to load");
 DEFINE_string(output, "", "Name of ROS bag file to output");
@@ -67,8 +68,8 @@ DECLARE_int32(v);
 
 static nav_msgs::Odometry last_odom_msg;
 
-void CompressedImageCallback(slam::Frontend& slam_frontend,
-                             sensor_msgs::CompressedImage& msg) {
+void CompressedImageCallback(sensor_msgs::CompressedImage& msg,
+                             Frontend* frontend) {
   double image_time = msg.header.stamp.toSec();
   if (FLAGS_v > 0) {
     printf("CompressedImage t=%f\n", image_time);
@@ -82,7 +83,7 @@ void CompressedImageCallback(slam::Frontend& slam_frontend,
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
     delete [] image_channels;
   }
-  slam_frontend.ObserveImage(image, image_time, last_odom_msg);
+  frontend->ObserveImage(image, image_time, last_odom_msg);
   if (FLAGS_visualize) {
     cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE );
     cv::imshow("Display Image", image);
@@ -92,10 +93,19 @@ void CompressedImageCallback(slam::Frontend& slam_frontend,
   }
 }
 
-void OdometryCallback(const nav_msgs::Odometry& msg) {
+void OdometryCallback(const nav_msgs::Odometry& msg,
+                      Frontend* frontend) {
   if (FLAGS_v > 0) {
     printf("Odometry t=%f\n", msg.header.stamp.toSec());
   }
+  const Vector3f odom_loc(msg.pose.pose.position.x,
+                          msg.pose.pose.position.y,
+                          msg.pose.pose.position.z);
+  const Quaternionf  odom_angle(msg.pose.pose.orientation.w,
+                                msg.pose.pose.orientation.x,
+                                msg.pose.pose.orientation.y,
+                                msg.pose.pose.orientation.z);
+  frontend->ObserveOdometry(odom_loc, odom_angle, msg.header.stamp.toSec());
   last_odom_msg = msg;
 }
 
@@ -112,7 +122,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   topics.push_back(FLAGS_image_topic.c_str());
   topics.push_back(FLAGS_odom_topic.c_str());
   rosbag::View view(bag, rosbag::TopicQuery(topics));
-  slam::Frontend slam_frontend(*n, "");
+  slam::Frontend slam_frontend("");
   double bag_t_start = -1;
   // Iterate for every message.
   for (rosbag::View::iterator it = view.begin();
@@ -130,14 +140,14 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       sensor_msgs::CompressedImagePtr image_msg =
           message.instantiate<sensor_msgs::CompressedImage>();
       if (image_msg != NULL) {
-        CompressedImageCallback(slam_frontend, *image_msg);
+        CompressedImageCallback(*image_msg, &slam_frontend);
       }
     }
     {
       nav_msgs::OdometryPtr odom_msg =
           message.instantiate<nav_msgs::Odometry>();
       if (odom_msg != NULL) {
-        OdometryCallback(*odom_msg);
+        OdometryCallback(*odom_msg, &slam_frontend);
       }
     }
   }
@@ -148,8 +158,8 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
     try {
       output_bag.open(FLAGS_output.c_str(), rosbag::bagmode::Write);
     } catch(rosbag::BagException exception) {
-      printf("Unable to open %s, reason:\n %s\n", 
-             FLAGS_output.c_str(), 
+      printf("Unable to open %s, reason:\n %s\n",
+             FLAGS_output.c_str(),
              exception.what());
       return;
     }
@@ -192,6 +202,10 @@ int main(int argc, char** argv) {
   google::ParseCommandLineFlags(&argc, &argv, false);
   if (FLAGS_input == "") {
     fprintf(stderr, "ERROR: Must specify input file!\n");
+    return 1;
+  }
+  if (FLAGS_output == "") {
+    fprintf(stderr, "ERROR: Must specify output file!\n");
     return 1;
   }
   // Initialize ROS.

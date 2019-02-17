@@ -21,17 +21,23 @@
 
 #include <stdlib.h>
 #include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 #include "opencv2/opencv.hpp"
 #include "opencv2/features2d.hpp"
+#include "opencv2/imgproc.hpp"
 #include "opencv2/xfeatures2d.hpp"
 #include "glog/logging.h"
 #include "nav_msgs/Odometry.h"
 
 #include "slam_frontend.h"
 
+using nav_msgs::Odometry;
+using slam_types::VisionFeature;
 using std::string;
 using std::vector;
 using Eigen::Quaternionf;
@@ -39,16 +45,18 @@ using Eigen::Vector3f;
 
 /* --- Frontend Implementation Code --- */
 
-cv::Mat CreateDebugImage(const slam::Frame& frame_one,
-                         const slam::Frame& frame_two,
+namespace slam {
+
+cv::Mat CreateDebugImage(const Frame& frame_one,
+                         const Frame& frame_two,
                          const slam_types::VisionCorrespondence& corr) {
   cv::Mat return_image = frame_one.debug_image_.clone();
-  cv::cvtColor(return_image, return_image, CV_GRAY2RGB);
-  for (auto c: corr.feature_matches) {
+  cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
+  for (auto c : corr.feature_matches) {
     cv::circle(return_image,
                frame_two.keypoints_[c.pose_i_id].pt,
                5, CV_RGB(255, 0, 0));
-    cv::line(return_image, 
+    cv::line(return_image,
              frame_two.keypoints_[c.pose_i_id].pt,
              frame_one.keypoints_[c.pose_j_id].pt,
              CV_RGB(0, 255, 0));
@@ -56,28 +64,23 @@ cv::Mat CreateDebugImage(const slam::Frame& frame_one,
   return return_image;
 }
 
-bool OdomCheck(const nav_msgs::Odometry& last_slam_odom, nav_msgs::Odometry& new_odom) {
-    geometry_msgs::Point p;
-    p.x = new_odom.pose.pose.position.x - last_slam_odom.pose.pose.position.x;
-    p.y = new_odom.pose.pose.position.y - last_slam_odom.pose.pose.position.y;
-    p.z = new_odom.pose.pose.position.z - last_slam_odom.pose.pose.position.z;
-    if (sqrt(pow(p.x, 2) + pow(p.y, 2) + pow(p.z, 2)) >= 0.1) {
-      return true;
+bool Frontend::OdomCheck() {
+  if (!odom_initialized_) return false;
+  if ((prev_odom_translation_ - odom_translation_).norm() >
+      config_.min_odom_translation) {
+    return true;
+  }
+  if (prev_odom_rotation_.angularDistance(odom_rotation_) >
+      config_.min_odom_rotation) {
+    return true;
     }
-    geometry_msgs::Quaternion q_old = last_slam_odom.pose.pose.orientation;
-    geometry_msgs::Quaternion q_new = last_slam_odom.pose.pose.orientation;
-    double inner_product = q_new.x * q_old.x + q_new.y * q_old.y + q_new.z * q_old.z + q_new.w * q_old.w;
-    double angle_change = acos(2 * pow(inner_product, 2) - 1);
-    if (angle_change >= 10) {
-      return true;
-    }
-    return false;
+  return false;
 }
 
-slam::Frontend::Frontend(ros::NodeHandle& n, const std::string& config_path) {
+Frontend::Frontend (const string& config_path) {
   last_slam_odom_.pose.pose.position = geometry_msgs::Point();
   fast_feature_detector_ = cv::FastFeatureDetector::create(10, true);
-  switch(config_.getDescExType()) {
+  switch (config_.descriptor_extract_type_) {
     case FrontendConfig::DescriptorExtractorType::AKAZE:
       descriptor_extractor_ = cv::AKAZE::create(cv::AKAZE::DESCRIPTOR_MLDB,
                                                 0, 3, 0.0001f, 10, 5,
@@ -113,11 +116,19 @@ slam::Frontend::Frontend(ros::NodeHandle& n, const std::string& config_path) {
   }
 }
 
-void slam::Frontend::ObserveImage(const cv::Mat& image,
+void Frontend::ObserveOdometry(const Vector3f& translation,
+                               const Quaternionf& rotation,
+                               double timestamp) {
+  odom_translation_ = translation;
+  odom_rotation_ = rotation;
+  odom_timestamp_ = timestamp;
+}
+
+void Frontend::ObserveImage(const cv::Mat& image,
                                   double time,
                                   const nav_msgs::Odometry& odom_msg) {
   // Check from the odometry if its time to run SLAM
-  if(!OdomCheck(odom_msg, last_slam_odom_)) {
+  if (!OdomCheck()) {
     curr_frame_ID_++;
     return;
   } else {
@@ -126,7 +137,8 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
   }
   std::vector<cv::KeyPoint> frame_keypoints;
   cv::Mat frame_descriptors;
-  if (config_.getDescExType() == FrontendConfig::DescriptorExtractorType::FREAK) {
+  if (config_.descriptor_extract_type_ ==
+      FrontendConfig::DescriptorExtractorType::FREAK) {
     fast_feature_detector_->detect(image, frame_keypoints);
     descriptor_extractor_->compute(image, frame_keypoints, frame_descriptors);
   } else {
@@ -139,19 +151,19 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
                    frame_descriptors,
                    config_,
                    curr_frame_ID_);
-  if (config_.getDebug()) {
+  if (config_.debug_images_) {
     curr_frame.debug_image_ = image;
   }
-  for(uint32_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
+  for (uint32_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
     std::vector<slam_types::VisionCorrespondencePair> pairs;
     Frame& past_frame = frame_list_[frame_num];
-    std::vector<cv::DMatch> matches = 
-        curr_frame.GetMatches(past_frame, config_.getNNMatchRatio());
+    std::vector<cv::DMatch> matches =
+        curr_frame.GetMatches(past_frame, config_.nn_match_ratio_);
     std::sort(matches.begin(), matches.end());
-    const int num_good_matches = matches.size() * config_.getBestPercent();
+    const int num_good_matches = matches.size() * config_.best_percent_;
     matches.erase(matches.begin() + num_good_matches, matches.end());
     // Restructure matches, add all keypoints to new list.
-    for (auto match: matches) {
+    for (auto match : matches) {
       std::pair<uint64_t, uint64_t> initial = past_frame.GetInitialFrame(match);
       // Add it to the original frame.
       curr_frame.AddMatchInitial(match, initial);
@@ -169,34 +181,34 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
     features.push_back(CreateVisionFeature(i, curr_frame.keypoints_[i].pt));
   }
   nodes_.push_back(CreateSLAMNode(curr_frame.frame_ID_, features, odom_msg));
-  if (config_.getDebug() && !frame_list_.empty()) {    
+  if (config_.debug_images_ && !frame_list_.empty()) {
     debug_images_.push_back(CreateDebugImage(curr_frame,
                                              frame_list_.back(),
                                              correspondences_.back()));
   }
-  if (frame_list_.size() >= config_.getMaxFrameLife()) {
+  if (frame_list_.size() >= config_.frame_life_) {
     frame_list_.erase(frame_list_.begin());
   }
   frame_list_.push_back(curr_frame);
 }
 
 std::vector<slam_types::VisionCorrespondence>
-slam::Frontend::getCorrespondences() {
+Frontend::getCorrespondences() {
   return correspondences_;
 }
 
 std::vector<slam_types::SLAMNode>
-slam::Frontend::getSLAMNodes() {
+Frontend::getSLAMNodes() {
   return nodes_;
 }
 
 std::vector<cv::Mat>
-slam::Frontend::getDebugImages() {
+Frontend::getDebugImages() {
   return debug_images_;
 }
 
 slam_types::VisionCorrespondencePair
-slam::Frontend::CreateVisionPair(uint64_t pose_i_idx,
+Frontend::CreateVisionPair(uint64_t pose_i_idx,
                                  uint64_t pose_j_idx,
                                  uint64_t pose_initial,
                                  uint64_t pose_initial_idx) {
@@ -209,9 +221,10 @@ slam::Frontend::CreateVisionPair(uint64_t pose_i_idx,
 }
 
 slam_types::VisionCorrespondence
-slam::Frontend::CreateVisionCorrespondence(uint64_t pose_i,
-                                           uint64_t pose_j,
-                                           const std::vector<slam_types::VisionCorrespondencePair> pairs) {
+Frontend::CreateVisionCorrespondence(uint64_t pose_i,
+                                     uint64_t pose_j,
+                                     const
+std::vector<slam_types::VisionCorrespondencePair> pairs) {
   slam_types::VisionCorrespondence corr;
   corr.pose_i = pose_i;
   corr.pose_j = pose_j;
@@ -220,7 +233,7 @@ slam::Frontend::CreateVisionCorrespondence(uint64_t pose_i,
 }
 
 slam_types::VisionFeature
-slam::Frontend::CreateVisionFeature(uint64_t id, cv::Point2f pixel) {
+Frontend::CreateVisionFeature(uint64_t id, cv::Point2f pixel) {
   slam_types::VisionFeature vis;
   vis.id = id;
   vis.descriptor_id = 0;
@@ -229,16 +242,18 @@ slam::Frontend::CreateVisionFeature(uint64_t id, cv::Point2f pixel) {
 }
 
 slam_types::SLAMNode
-slam::Frontend::CreateSLAMNode(uint64_t pose_i,
-                                     const std::vector<slam_types::VisionFeature>& features,
-                                     const nav_msgs::Odometry& odom_msg) {
+Frontend::CreateSLAMNode(uint64_t pose_i,
+                               const vector<VisionFeature>&  features,
+                               const Odometry& odom_msg) {
   slam_types::SLAMNode node;
   node.id = pose_i;
   node.is_vision_node = true;
   node.features = features;
   auto loc = odom_msg.pose.pose.position;
   auto orient = odom_msg.pose.pose.orientation;
-  node.pose = slam_types::RobotPose(Vector3f(loc.x, loc.y, loc.z), 
+  printf("%s:%d TODO: Pose timestamp\n", __FILE__, __LINE__);
+  node.pose = slam_types::RobotPose(0,
+    Vector3f(loc.x, loc.y, loc.z),
                                     AngleAxisf(Quaternionf(orient.w,
                                                            orient.x,
                                                            orient.y,
@@ -248,18 +263,18 @@ slam::Frontend::CreateSLAMNode(uint64_t pose_i,
 
 /* --- Frame Implementation Code --- */
 
-slam::Frame::Frame(const std::vector<cv::KeyPoint>& keypoints, 
+Frame::Frame(const std::vector<cv::KeyPoint>& keypoints,
                    const cv::Mat& descriptors,
-                   const slam::FrontendConfig& config,
+                   const FrontendConfig& config,
                    uint64_t frame_ID) {
   keypoints_ = keypoints;
   descriptors_ = descriptors;
   config_ = config;
   frame_ID_ = frame_ID;
-  matcher_ = cv::BFMatcher::create(config_.getBFMatcherParam());
+  matcher_ = cv::BFMatcher::create(config_.bf_matcher_param_);
 }
 
-std::vector<cv::DMatch> slam::Frame::GetMatches(const slam::Frame& frame, 
+std::vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
                                                 double nn_match_ratio) {
   std::vector<std::vector<cv::DMatch>> matches;
   matcher_->knnMatch(descriptors_, frame.descriptors_, matches, 2);
@@ -268,17 +283,17 @@ std::vector<cv::DMatch> slam::Frame::GetMatches(const slam::Frame& frame,
     cv::DMatch first = matches[i][0];
     float dist1 = matches[i][0].distance;
     float dist2 = matches[i][1].distance;
-    if(dist1 < config_.getNNMatchRatio() * dist2) {
+    if (dist1 < config_.nn_match_ratio_ * dist2) {
       best_matches.push_back(first);
     }
   }
   return best_matches;
 }
 
-std::pair<uint64_t, uint64_t> slam::Frame::GetInitialFrame(cv::DMatch match) {
+std::pair<uint64_t, uint64_t> Frame::GetInitialFrame(cv::DMatch match) {
   auto result = initial_appearances.find(match.trainIdx);
   if (result == initial_appearances.end()) {
-    //We didn't find it in the database, this must be the first time then.
+    // We didn't find it in the database, this must be the first time then.
     auto first_app = std::pair<uint64_t, uint64_t>(frame_ID_, match.trainIdx);
     initial_appearances.insert({match.trainIdx, first_app});
     return first_app;
@@ -286,15 +301,15 @@ std::pair<uint64_t, uint64_t> slam::Frame::GetInitialFrame(cv::DMatch match) {
   return result->second;
 }
 
-void slam::Frame::AddMatchInitial(cv::DMatch match, 
+void Frame::AddMatchInitial(cv::DMatch match,
                                   std::pair<uint64_t, uint64_t> initial) {
   initial_appearances.insert({match.queryIdx, initial});
 }
 
 /* --- Config Implementation Code --- */
 
-slam::FrontendConfig::FrontendConfig() {
-  //Load Default values
+FrontendConfig::FrontendConfig() {
+  // Load Default values
   debug_images_ = true;
   descriptor_extract_type_ = FrontendConfig::DescriptorExtractorType::AKAZE;
   best_percent_ = 0.3f;
@@ -302,3 +317,5 @@ slam::FrontendConfig::FrontendConfig() {
   frame_life_ = 5;
   bf_matcher_param_ = cv::NORM_HAMMING;
 }
+
+}  // namespace slam
