@@ -40,8 +40,6 @@
 #include "rosbag/bag.h"
 #include "rosbag/view.h"
 #include "ros/package.h"
-#include "vision_slam_frontend/SLAMNode.h"
-#include "vision_slam_frontend/VisionCorrespondence.h"
 #include "cv_bridge/cv_bridge.h"
 
 #include "slam_frontend.h"

@@ -48,26 +48,26 @@ struct VisionFeature {
       id(id), descriptor_id(descriptor_id), pixel(p) {}
 };
 
-struct VisionCorrespondencePair {
-  //ID of initial pose.
+struct FeatureMatch {
+  // ID of initial pose from where this feature was observed.
   uint64_t pose_initial;
-  //feature ID from initial pose.
-  uint64_t pose_initial_id;
-  //feature ID from first pose.
-  uint64_t pose_i_id;
-  //feature ID from second pose.
-  uint64_t pose_j_id;
+  // Feature ID from the first pose where this feature was observed.
+  uint64_t id_initial;
+  // Feature ID from first pose.
+  uint64_t id_i;
+  // Feature ID from second pose.
+  uint64_t id_j;
   // Default constructor: do nothing.
-  VisionCorrespondencePair() {}
+  FeatureMatch() {}
   // Convenience constructor: initialize everything.
-  VisionCorrespondencePair(uint64_t pose_i_idx,
-                           uint64_t pose_j_idx,
-                           uint64_t pose_initial,
-                           uint64_t pose_initial_idx) :
-      pose_initial(pose_initial),
-      pose_initial_id(pose_initial_idx),
-      pose_i_id(pose_i_idx),
-      pose_j_id(pose_j_idx) {}
+  FeatureMatch(uint64_t pose_i_idx,
+               uint64_t pose_j_idx,
+               uint64_t pose_initial,
+               uint64_t initial_id) :
+    pose_initial(pose_initial),
+    id_initial(initial_id),
+    id_i(pose_i_idx),
+    id_j(pose_j_idx) {}
 };
 
 struct VisionCorrespondence {
@@ -77,15 +77,15 @@ struct VisionCorrespondence {
   uint64_t pose_j;
   // Pair of feature ID from first pose, and feature ID from second pose,
   // and feature ID from initial pose.
-  std::vector<VisionCorrespondencePair> feature_matches;
+  std::vector<FeatureMatch> feature_matches;
   // Default constructor: do nothing.
   VisionCorrespondence() {}
   // Convenience constructor: initialize everything.
   VisionCorrespondence(
       uint64_t pose_i,
       uint64_t pose_j,
-      const std::vector<slam_types::VisionCorrespondencePair>& pairs) :
-      pose_i(pose_i), pose_j(pose_j), feature_matches(pairs) {}
+      const std::vector<slam_types::FeatureMatch>& feature_matches) :
+      pose_i(pose_i), pose_j(pose_j), feature_matches(feature_matches) {}
 };
 
 struct RobotPose {
@@ -151,6 +151,6 @@ struct SLAMProblem {
   std::vector<OdometryCorrespondence> odometry;
 };
 
-}  // namespace vio_types
+}  // namespace slam_types
 
-#endif // __SLAM_TYPES_H__
+#endif  // __SLAM_TYPES_H__

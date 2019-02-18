@@ -39,7 +39,7 @@ using slam_types::RobotPose;
 using slam_types::SLAMNode;
 using slam_types::SLAMProblem;
 using slam_types::VisionCorrespondence;
-using slam_types::VisionCorrespondencePair;
+using slam_types::FeatureMatch;
 using slam_types::VisionFeature;
 using std::string;
 using std::vector;
@@ -58,11 +58,11 @@ cv::Mat CreateDebugImage(const Frame& frame_one,
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
   for (auto c : corr.feature_matches) {
     cv::circle(return_image,
-               frame_two.keypoints_[c.pose_i_id].pt,
+               frame_two.keypoints_[c.id_i].pt,
                5, CV_RGB(255, 0, 0));
     cv::line(return_image,
-             frame_two.keypoints_[c.pose_i_id].pt,
-             frame_one.keypoints_[c.pose_j_id].pt,
+             frame_two.keypoints_[c.id_i].pt,
+             frame_one.keypoints_[c.id_j].pt,
              CV_RGB(0, 255, 0));
   }
   return return_image;
@@ -179,7 +179,7 @@ void Frontend::ObserveImage(const cv::Mat& image,
     curr_frame.debug_image_ = image;
   }
   for (size_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
-    vector<VisionCorrespondencePair> pairs;
+    vector<FeatureMatch> pairs;
     Frame& past_frame = frame_list_[frame_num];
     vector<cv::DMatch> matches =
         curr_frame.GetMatches(past_frame, config_.nn_match_ratio_);
@@ -191,7 +191,7 @@ void Frontend::ObserveImage(const cv::Mat& image,
       std::pair<uint64_t, uint64_t> initial = past_frame.GetInitialFrame(match);
       // Add it to the original frame.
       curr_frame.AddMatchInitial(match, initial);
-      pairs.push_back(VisionCorrespondencePair(match.trainIdx,
+      pairs.push_back( FeatureMatch (match.trainIdx,
                                                match.queryIdx,
                                                initial.first,
                                                initial.second));
@@ -294,6 +294,8 @@ FrontendConfig::FrontendConfig() {
   nn_match_ratio_ = 0.8f;
   frame_life_ = 5;
   bf_matcher_param_ = cv::NORM_HAMMING;
+  min_odom_rotation = 10.0 / 180.0 * M_PI;
+  min_odom_translation = 0.1;
 }
 
 }  // namespace slam

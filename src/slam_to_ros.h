@@ -11,12 +11,12 @@
 #include <geometry_msgs/Vector3.h>
 
 static vision_slam_frontend::VisionCorrespondencePair
-VisionCorrespondencePairToRos(const slam_types::VisionCorrespondencePair& pair) {
+VisionCorrespondencePairToRos(const slam_types::FeatureMatch& pair) {
   vision_slam_frontend::VisionCorrespondencePair ros_pair;
-  ros_pair.pose_i_index = pair.pose_i_id;
-  ros_pair.pose_j_index = pair.pose_j_id;
+  ros_pair.pose_i_index = pair.id_i;
+  ros_pair.pose_j_index = pair.id_j;
   ros_pair.pose_initial = pair.pose_initial;
-  ros_pair.pose_initial_index = pair.pose_initial_id;
+  ros_pair.pose_initial_index = pair.id_initial;
   return ros_pair;
 }
 
