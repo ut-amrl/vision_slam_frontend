@@ -41,16 +41,33 @@
 #include "rosbag/view.h"
 #include "ros/package.h"
 #include "cv_bridge/cv_bridge.h"
+#include "visualization_msgs/Marker.h"
+#include "visualization_msgs/MarkerArray.h"
 
+#include "gui_helpers.h"
 #include "slam_frontend.h"
 #include "slam_to_ros.h"
 
+
+using gui_helpers::Color4f;
+using gui_helpers::AddPoint;
+using gui_helpers::AddLine;
+using gui_helpers::InitializeMarker;
 using ros::Time;
 using slam::Frontend;
+using slam_types::RobotPose;
+using slam_types::SLAMNode;
+using slam_types::SLAMProblem;
+using slam_types::OdometryFactor;
+using slam_types::VisionFactor;
+using slam_types::FeatureMatch;
+using slam_types::VisionFeature;
 using std::string;
 using std::vector;
 using Eigen::Quaternionf;
 using Eigen::Vector3f;
+using visualization_msgs::Marker;
+using visualization_msgs::MarkerArray;
 
 DEFINE_string(image_topic,
               "/camera_right/image_raw/compressed",
@@ -67,7 +84,7 @@ DECLARE_int32(v);
 void CompressedImageCallback(sensor_msgs::CompressedImage& msg,
                              Frontend* frontend) {
   double image_time = msg.header.stamp.toSec();
-  if (FLAGS_v > 0) {
+  if (FLAGS_v > 1) {
     printf("CompressedImage t=%f\n", image_time);
   }
   cv::Mat image = cv::imdecode(cv::InputArray(msg.data),1);
@@ -91,7 +108,7 @@ void CompressedImageCallback(sensor_msgs::CompressedImage& msg,
 
 void OdometryCallback(const nav_msgs::Odometry& msg,
                       Frontend* frontend) {
-  if (FLAGS_v > 0) {
+  if (FLAGS_v > 1) {
     printf("Odometry t=%f\n", msg.header.stamp.toSec());
   }
   const Vector3f odom_loc(msg.pose.pose.position.x,
@@ -104,8 +121,44 @@ void OdometryCallback(const nav_msgs::Odometry& msg,
   frontend->ObserveOdometry(odom_loc, odom_angle, msg.header.stamp.toSec());
 }
 
+void PublishVisualization(const SLAMProblem& problem,
+                          ros::Publisher* graph_publisher) {
+  static Marker nodes_marker;
+  static Marker odom_marker;
+  static Marker vision_marker;
+  static bool initialized = false;
+  if (!initialized) {
+    InitializeMarker(
+        Marker::POINTS, Color4f::kRed, 0.05, 0.1, 0, &nodes_marker);
+    InitializeMarker(
+        Marker::LINE_LIST, Color4f::kGreen, 0.02, 0, 0, &odom_marker);
+    InitializeMarker(
+        Marker::LINE_LIST, Color4f::kBlue, 0.01, 0, 0, &vision_marker);
+    initialized = true;
+  }
+  for (const SLAMNode& node :  problem.nodes) {
+    AddPoint(node.pose.loc, Color4f::kRed, &nodes_marker);
+  }
+  for (const OdometryFactor& factor : problem.odometry_factors) {
+    const Vector3f& loc1 = problem.nodes[factor.pose_i].pose.loc;
+    const Vector3f& loc2 = problem.nodes[factor.pose_j].pose.loc;
+    AddLine(loc1, loc2, Color4f::kGreen, &odom_marker);
+  }
+  for (const VisionFactor& factor : problem.vision_factors) {
+    const Vector3f& loc1 = problem.nodes[factor.pose_i].pose.loc;
+    const Vector3f& loc2 = problem.nodes[factor.pose_j].pose.loc;
+    AddLine(loc1, loc2, Color4f::kBlue, &vision_marker);
+  }
+  MarkerArray markers;
+  markers.markers.push_back(nodes_marker);
+  markers.markers.push_back(odom_marker);
+  markers.markers.push_back(vision_marker);
+  graph_publisher->publish(markers);
+}
+
 void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   rosbag::Bag bag;
+  cv_bridge::CvImage img_tranform;
   try {
     bag.open(filename,rosbag::bagmode::Read);
   } catch(rosbag::BagException exception) {
@@ -118,24 +171,30 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   topics.push_back(FLAGS_odom_topic.c_str());
   rosbag::View view(bag, rosbag::TopicQuery(topics));
   slam::Frontend slam_frontend("");
+  ros::Publisher gui_publisher = n->advertise<visualization_msgs::MarkerArray>(
+      "slam_frontend/pose_graph", 1);
+  ros::Publisher image_publisher = n->advertise<sensor_msgs::Image>(
+      "slam_frontend/debug_image", 1);
   double bag_t_start = -1;
   // Iterate for every message.
   for (rosbag::View::iterator it = view.begin();
        ros::ok() && it != view.end();
        ++it) {
     const rosbag::MessageInstance& message = *it;
-    if (FLAGS_v > 1) {
-      printf("Message t: %f\n", message.getTime().toSec());
-    }
     if (bag_t_start < 0.0) {
       bag_t_start = message.getTime().toSec();
     }
-    ros::spinOnce();
     {
       sensor_msgs::CompressedImagePtr image_msg =
           message.instantiate<sensor_msgs::CompressedImage>();
       if (image_msg != NULL) {
         CompressedImageCallback(*image_msg, &slam_frontend);
+        static std_msgs::Header debug_image_header;
+        debug_image_header.seq++;
+        debug_image_header.stamp = ros::Time::now();
+        img_tranform.image = slam_frontend.GetLastDebugImage();
+        img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
+        image_publisher.publish(img_tranform.toImageMsg());
       }
     }
     {
@@ -145,46 +204,54 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
         OdometryCallback(*odom_msg, &slam_frontend);
       }
     }
+    if (FLAGS_v > 0) {
+      SLAMProblem problem;
+      slam_frontend.GetSLAMProblem(&problem);
+      PublishVisualization(problem, &gui_publisher);
+    }
+    ros::spinOnce();
   }
   printf("Done processing bag file.\n");
   // Publish slam data
-  if (FLAGS_output != "") {
-    rosbag::Bag output_bag;
-    try {
-      output_bag.open(FLAGS_output.c_str(), rosbag::bagmode::Write);
-    } catch(rosbag::BagException exception) {
-      printf("Unable to open %s, reason:\n %s\n",
-             FLAGS_output.c_str(),
-             exception.what());
-      return;
-    }
-    std::vector<slam_types::SLAMNode> nodes = slam_frontend.getSLAMNodes();
-    std::vector<slam_types::VisionCorrespondence> corrs = slam_frontend.getCorrespondences();
-    std::vector<cv::Mat> debug_images = slam_frontend.getDebugImages();
-    for (auto node : nodes) {
-      output_bag.write<vision_slam_frontend::SLAMNode>("slam_nodes",
-                                                       ros::Time::now(),
-                                                       SLAMNodeToRos(node));
-    }
-    for (auto corr : corrs) {
-      output_bag.write<vision_slam_frontend::VisionCorrespondence>("slam_corrs",
-                                                                   ros::Time::now(),
-                                                                   VisionCorrespondenceToRos(corr));
-    }
-    cv_bridge::CvImage img_tranform;
-    uint64_t count = 0;
-    for (auto im: debug_images) {
-      std_msgs::Header h;
-      h.seq = count++;
-      h.stamp = ros::Time::now();
-      img_tranform.image = im;
-      img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
-      output_bag.write<sensor_msgs::Image>("slam_debug_images",
-                                           ros::Time::now(),
-                                           img_tranform.toImageMsg());
-    }
-    output_bag.close();
+  rosbag::Bag output_bag;
+  try {
+    output_bag.open(FLAGS_output.c_str(), rosbag::bagmode::Write);
+  } catch(rosbag::BagException exception) {
+    printf("Unable to open %s, reason:\n %s\n",
+            FLAGS_output.c_str(),
+            exception.what());
+    return;
   }
+  SLAMProblem problem;
+  slam_frontend.GetSLAMProblem(&problem);
+  PublishVisualization(problem, &gui_publisher);
+  std::vector<slam_types::SLAMNode> nodes = slam_frontend.getSLAMNodes();
+  std::vector<slam_types::VisionFactor> corrs =
+      slam_frontend.getCorrespondences();
+  std::vector<cv::Mat> debug_images = slam_frontend.getDebugImages();
+  for (auto node : nodes) {
+    output_bag.write<vision_slam_frontend::SLAMNode>("slam_nodes",
+                                                      ros::Time::now(),
+                                                      SLAMNodeToRos(node));
+  }
+  for (auto corr : corrs) {
+    output_bag.write<vision_slam_frontend::VisionCorrespondence>(
+        "slam_corrs",
+        ros::Time::now(),
+        VisionCorrespondenceToRos(corr));
+  }
+  uint64_t count = 0;
+  for (auto im: debug_images) {
+    std_msgs::Header h;
+    h.seq = count++;
+    h.stamp = ros::Time::now();
+    img_tranform.image = im;
+    img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
+    output_bag.write<sensor_msgs::Image>("slam_debug_images",
+                                          ros::Time::now(),
+                                          img_tranform.toImageMsg());
+  }
+  output_bag.close();
 }
 
 void SignalHandler(int signum) {

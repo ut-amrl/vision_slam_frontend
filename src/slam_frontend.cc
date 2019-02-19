@@ -38,7 +38,8 @@
 using slam_types::RobotPose;
 using slam_types::SLAMNode;
 using slam_types::SLAMProblem;
-using slam_types::VisionCorrespondence;
+using slam_types::OdometryFactor;
+using slam_types::VisionFactor;
 using slam_types::FeatureMatch;
 using slam_types::VisionFeature;
 using std::string;
@@ -53,7 +54,7 @@ namespace slam {
 
 cv::Mat CreateDebugImage(const Frame& frame_one,
                          const Frame& frame_two,
-                         const VisionCorrespondence& corr) {
+                         const VisionFactor& corr) {
   cv::Mat return_image = frame_one.debug_image_.clone();
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
   for (auto c : corr.feature_matches) {
@@ -143,14 +144,16 @@ Frontend::Frontend(const string& config_path) :
 void Frontend::ObserveOdometry(const Vector3f& translation,
                                const Quaternionf& rotation,
                                double timestamp) {
+  odom_translation_ = translation;
+  odom_rotation_ = rotation;
+  odom_timestamp_ = timestamp;
   if (!odom_initialized_) {
+    init_odom_rotation_ = rotation;
+    init_odom_translation_ = translation;
     prev_odom_rotation_ = odom_rotation_;
     prev_odom_translation_ = odom_translation_;
     odom_initialized_ = true;
   }
-  odom_translation_ = translation;
-  odom_rotation_ = rotation;
-  odom_timestamp_ = timestamp;
 }
 
 void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
@@ -171,7 +174,7 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
 
 void Frontend::GetFeatureMatches(Frame* frame1_ptr,
                                  Frame* frame2_ptr,
-                                 VisionCorrespondence* correspondence) {
+                                 VisionFactor* correspondence) {
   Frame& frame1 = *frame1_ptr;
   Frame& frame2 = *frame2_ptr;
   vector<FeatureMatch> pairs;
@@ -190,8 +193,20 @@ void Frontend::GetFeatureMatches(Frame* frame1_ptr,
                                  initial.first,
                                  initial.second));
   }
-  *correspondence = VisionCorrespondence(
+  *correspondence = VisionFactor(
       frame1.frame_ID_, frame2.frame_ID_, pairs);
+}
+
+void Frontend::AddOdometryFactor() {
+  const Vector3f translation =
+      prev_odom_rotation_.inverse() * (odom_translation_ -
+      prev_odom_translation_);
+  const Quaternionf rotation(odom_rotation_ * prev_odom_rotation_.inverse());
+  odometry_factors_.push_back(OdometryFactor(
+      curr_frame_ID_ - 1,
+      curr_frame_ID_,
+      translation,
+      rotation));
 }
 
 void Frontend::ObserveImage(const cv::Mat& image,
@@ -206,26 +221,34 @@ void Frontend::ObserveImage(const cv::Mat& image,
     curr_frame.debug_image_ = image;
   }
   for (Frame& past_frame : frame_list_) {
-    VisionCorrespondence matches;
+    VisionFactor matches;
     GetFeatureMatches(&past_frame, &curr_frame, &matches);
-    if (matches.feature_matches.size() > config_.min_vision_matches) {
-      vision_factors_.push_back(matches);
-    }
+    // TODO(Jack): verify that this conditional check does not mess up
+    // book-keping.
+    // if (matches.feature_matches.size() > config_.min_vision_matches) {
+    //   vision_factors_.push_back(matches);
+    // }
+    vision_factors_.push_back(matches);
   }
   vector<VisionFeature> features;
   for (uint64_t i = 0; i < curr_frame.keypoints_.size(); i++) {
     features.push_back(VisionFeature(
         0,
         i,
-        Vector2f(curr_frame.keypoints_[i].pt.x, curr_frame.keypoints_[i].pt.y)
-    ));
+        Vector2f(curr_frame.keypoints_[i].pt.x, curr_frame.keypoints_[i].pt.y))
+    );
   }
+  const Vector3f loc =  init_odom_rotation_.inverse() *
+      (odom_translation_ - init_odom_translation_);
+  const Quaternionf angle = odom_rotation_ * init_odom_rotation_.inverse();
   nodes_.push_back(SLAMNode(curr_frame_ID_,
-                            RobotPose(odom_timestamp_,
-                                      odom_translation_,
-                                      odom_rotation_),
+                            odom_timestamp_,
+                            RobotPose(loc,
+                                      angle),
                             features));
-  AddOdometryFactor();
+  if (curr_frame_ID_ > 0) {
+    AddOdometryFactor();
+  }
   prev_odom_rotation_ = odom_rotation_;
   prev_odom_translation_ = odom_translation_;
   curr_frame_ID_++;
@@ -240,7 +263,7 @@ void Frontend::ObserveImage(const cv::Mat& image,
   frame_list_.push_back(curr_frame);
 }
 
-vector<VisionCorrespondence> Frontend::getCorrespondences() {
+vector<VisionFactor> Frontend::getCorrespondences() {
   return vision_factors_;
 }
 
@@ -250,6 +273,21 @@ vector<SLAMNode> Frontend::getSLAMNodes() {
 
 vector<cv::Mat> Frontend::getDebugImages() {
   return debug_images_;
+}
+
+cv::Mat Frontend::GetLastDebugImage() {
+  if (debug_images_.size() == 0) {
+    return cv::Mat();
+  }
+  return debug_images_.back();
+}
+
+
+void Frontend::GetSLAMProblem(SLAMProblem* problem) const {
+  *problem = slam_types::SLAMProblem(
+      nodes_,
+      vision_factors_,
+      odometry_factors_);
 }
 
 /* --- Frame Implementation Code --- */
@@ -308,7 +346,7 @@ FrontendConfig::FrontendConfig() {
   frame_life_ = 5;
   bf_matcher_param_ = cv::NORM_HAMMING;
   min_odom_rotation = 10.0 / 180.0 * M_PI;
-  min_odom_translation = 0.1;
+  min_odom_translation = 0.2;
   min_vision_matches = 10;
 }
 

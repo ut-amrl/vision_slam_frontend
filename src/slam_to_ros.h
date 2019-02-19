@@ -57,7 +57,7 @@ SLAMNodeToRos(const slam_types::SLAMNode& node) {
 }
 
 static vision_slam_frontend::VisionCorrespondence
-VisionCorrespondenceToRos(const slam_types::VisionCorrespondence& corr) {
+VisionCorrespondenceToRos(const slam_types::VisionFactor& corr) {
   vision_slam_frontend::VisionCorrespondence ros_corr;
   ros_corr.pose_i = corr.pose_i;
   ros_corr.pose_j = corr.pose_j;

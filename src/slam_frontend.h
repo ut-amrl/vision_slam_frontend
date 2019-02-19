@@ -99,9 +99,14 @@ class Frontend {
   void ObserveOdometry(const Eigen::Vector3f& translation,
                        const Eigen::Quaternionf& rotation,
                        double timestamp);
-  std::vector<slam_types::VisionCorrespondence> getCorrespondences();
+  std::vector<slam_types::VisionFactor> getCorrespondences();
   std::vector<slam_types::SLAMNode> getSLAMNodes();
   std::vector<cv::Mat> getDebugImages();
+  // Return the latest debug image.
+  cv::Mat GetLastDebugImage();
+
+  // Get a fully instantiated SLAM problem with the data collected so far.
+  void GetSLAMProblem(slam_types::SLAMProblem* problem) const;
 
  private:
   // Returns true iff odometry reports that the robot has moved sufficiently to
@@ -113,12 +118,16 @@ class Frontend {
   // to track the initial frame for all matches.
   void GetFeatureMatches(Frame* frame1,
                          Frame* frame2,
-                         slam_types::VisionCorrespondence* correspondence);
+                         slam_types::VisionFactor* correspondence);
   // Create a new odometry factor, and reset odometry tracking variables.
   void AddOdometryFactor();
 
   // Indicates if odometry has been initialized or not.
   bool odom_initialized_;
+  // Initial odometry translation.
+  Eigen::Vector3f init_odom_translation_;
+  // Initial odometry rotation.
+  Eigen::Quaternionf init_odom_rotation_;
   // Previous odometry-reported pose translation.
   Eigen::Vector3f prev_odom_translation_;
   // Previous odometry-reported pose rotation.
@@ -138,9 +147,9 @@ class Frontend {
   cv::Ptr<cv::Feature2D> descriptor_extractor_;
   cv::Ptr<cv::FastFeatureDetector> fast_feature_detector_;
   // Formatted data for slam problem
-  std::vector<slam_types::VisionCorrespondence> vision_factors_;
+  std::vector<slam_types::VisionFactor> vision_factors_;
   std::vector<slam_types::SLAMNode> nodes_;
-  std::vector<slam_types::OdometryCorrespondence> odometry_factors;
+  std::vector<slam_types::OdometryFactor> odometry_factors_;
   // Debug
   std::vector<cv::Mat> debug_images_;
 };
