@@ -29,15 +29,6 @@
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
 
-using Eigen::Affine3f;
-using Eigen::AngleAxisf;
-using Eigen::Quaternionf;
-using Eigen::Matrix2f;
-using Eigen::Matrix3f;
-using Eigen::Translation3f;
-using Eigen::Vector2f;
-using Eigen::Vector3f;
-
 namespace slam_types {
 
 struct VisionFeature {
@@ -47,28 +38,36 @@ struct VisionFeature {
   // descriptor type.
   uint64_t descriptor_id;
   // Camera pixel location of feature.
-  Vector2f pixel;
-  // Ground truth 3D location of feature points, in local coordinate frame.
-  Vector3f point;
+  Eigen::Vector2f pixel;
   // Default constructor: do nothing.
   VisionFeature() {}
   // Convenience constructor: initialize everything.
   VisionFeature(uint64_t id,
                 uint64_t descriptor_id,
-                const Vector2f& p,
-                const Vector3f& ground_truth) :
-      id(id), descriptor_id(descriptor_id), pixel(p), point(ground_truth) {}
+                const Eigen::Vector2f& p) :
+      id(id), descriptor_id(descriptor_id), pixel(p) {}
 };
 
-struct VisionCorrespondencePair {
-  //ID of initial pose.
+struct FeatureMatch {
+  // ID of initial pose from where this feature was observed.
   uint64_t pose_initial;
-  //feature ID from initial pose.
-  uint64_t pose_initial_id;
-  //feature ID from first pose.
-  uint64_t pose_i_id;
-  //feature ID from second pose.
-  uint64_t pose_j_id;
+  // Feature ID from the first pose where this feature was observed.
+  uint64_t id_initial;
+  // Feature ID from first pose.
+  uint64_t id_i;
+  // Feature ID from second pose.
+  uint64_t id_j;
+  // Default constructor: do nothing.
+  FeatureMatch() {}
+  // Convenience constructor: initialize everything.
+  FeatureMatch(uint64_t pose_i_idx,
+               uint64_t pose_j_idx,
+               uint64_t pose_initial,
+               uint64_t initial_id) :
+    pose_initial(pose_initial),
+    id_initial(initial_id),
+    id_i(pose_i_idx),
+    id_j(pose_j_idx) {}
 };
 
 struct VisionCorrespondence {
@@ -78,19 +77,31 @@ struct VisionCorrespondence {
   uint64_t pose_j;
   // Pair of feature ID from first pose, and feature ID from second pose,
   // and feature ID from initial pose.
-  std::vector<VisionCorrespondencePair> feature_matches;
+  std::vector<FeatureMatch> feature_matches;
+  // Default constructor: do nothing.
+  VisionCorrespondence() {}
+  // Convenience constructor: initialize everything.
+  VisionCorrespondence(
+      uint64_t pose_i,
+      uint64_t pose_j,
+      const std::vector<slam_types::FeatureMatch>& feature_matches) :
+      pose_i(pose_i), pose_j(pose_j), feature_matches(feature_matches) {}
 };
 
 struct RobotPose {
+  // Timestamp.
+  double timestamp;
   // Robot location.
-  Vector3f loc;
+  Eigen::Vector3f loc;
   // Robot angle: rotates points from robot frame to global.
-  AngleAxisf angle;
+  Eigen::Quaternionf angle;
   // Default constructor: do nothing.
   RobotPose() {}
   // Convenience constructor: initialize everything.
-  RobotPose(const Vector3f& loc, const AngleAxisf& angle) :
-      loc(loc), angle(angle) {}
+  RobotPose(double t,
+            const Eigen::Vector3f& loc,
+            const Eigen::Quaternionf& angle) :
+      timestamp(t), loc(loc), angle(angle) {}
   // Return a transform from the robot to the world frame for this pose.
   Eigen::Affine3f RobotToWorldTf() const {
     return (Eigen::Translation3f(loc) * angle);
@@ -108,13 +119,9 @@ struct OdometryCorrespondence {
   // ID of second pose.
   uint64_t pose_j;
   // Translation to go from pose i to pose j.
-  Vector3f translation;
+  Eigen::Vector3f translation;
   // Rotation to go from pose i to pose j.
-  Vector3f rotation;
-  // Translation covariance.
-  Matrix3f translation_covariance;
-  // Rotation covariance, in angle-axis form.
-  Matrix3f rotation_covariance;
+  Eigen::Quaternionf rotation;
 };
 
 struct SLAMNode {
@@ -124,15 +131,13 @@ struct SLAMNode {
   RobotPose pose;
   // Observed vision features.
   std::vector<VisionFeature> features;
-  // Indicates whether this node should have any visual features or not.
-  bool is_vision_node;
   // Default constructor: do nothing.
   SLAMNode() {}
   // Convenience constructor, initialize all components.
   SLAMNode(uint64_t id,
            const RobotPose& pose,
-           bool is_vision) :
-      id(id), pose(pose), features(), is_vision_node(is_vision) {}
+           const std::vector<VisionFeature>& features) :
+      id(id), pose(pose), features(features) {}
 };
 
 struct SLAMProblem {
@@ -146,6 +151,6 @@ struct SLAMProblem {
   std::vector<OdometryCorrespondence> odometry;
 };
 
-}  // namespace vio_types
+}  // namespace slam_types
 
-#endif // __SLAM_TYPES_H__
+#endif  // __SLAM_TYPES_H__
