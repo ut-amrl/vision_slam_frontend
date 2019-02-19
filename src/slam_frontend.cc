@@ -48,7 +48,7 @@ cv::Mat CreateDebugImage(const slam::Frame& frame_one,
     cv::circle(return_image,
                frame_two.keypoints_[c.pose_i_id].pt,
                5, CV_RGB(255, 0, 0));
-    cv::line(return_image, 
+    cv::line(return_image,
              frame_two.keypoints_[c.pose_i_id].pt,
              frame_one.keypoints_[c.pose_j_id].pt,
              CV_RGB(0, 255, 0));
@@ -145,7 +145,7 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
   for(uint32_t frame_num = 0; frame_num < frame_list_.size(); frame_num++) {
     std::vector<slam_types::VisionCorrespondencePair> pairs;
     Frame& past_frame = frame_list_[frame_num];
-    std::vector<cv::DMatch> matches = 
+    std::vector<cv::DMatch> matches =
         curr_frame.GetMatches(past_frame, config_.getNNMatchRatio());
     std::sort(matches.begin(), matches.end());
     const int num_good_matches = matches.size() * config_.getBestPercent();
@@ -160,7 +160,7 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
                                        initial.first,
                                        initial.second));
     }
-    correspondences_.push_back(CreateVisionCorrespondence(past_frame.frame_ID_,
+    vision_factors_.push_back(CreateVisionCorrespondence(past_frame.frame_ID_,
                                                          curr_frame.frame_ID_,
                                                          pairs));
   }
@@ -169,10 +169,10 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
     features.push_back(CreateVisionFeature(i, curr_frame.keypoints_[i].pt));
   }
   nodes_.push_back(CreateSLAMNode(curr_frame.frame_ID_, features, odom_msg));
-  if (config_.getDebug() && !frame_list_.empty()) {    
+  if (config_.getDebug() && !frame_list_.empty()) {
     debug_images_.push_back(CreateDebugImage(curr_frame,
                                              frame_list_.back(),
-                                             correspondences_.back()));
+                                             vision_factors_.back()));
   }
   if (frame_list_.size() >= config_.getMaxFrameLife()) {
     frame_list_.erase(frame_list_.begin());
@@ -182,7 +182,7 @@ void slam::Frontend::ObserveImage(const cv::Mat& image,
 
 std::vector<slam_types::VisionCorrespondence>
 slam::Frontend::getCorrespondences() {
-  return correspondences_;
+  return vision_factors_;
 }
 
 std::vector<slam_types::SLAMNode>
@@ -242,7 +242,7 @@ slam::Frontend::CreateSLAMNode(uint64_t pose_i,
 
 /* --- Frame Implementation Code --- */
 
-slam::Frame::Frame(const std::vector<cv::KeyPoint>& keypoints, 
+slam::Frame::Frame(const std::vector<cv::KeyPoint>& keypoints,
                    const cv::Mat& descriptors,
                    const slam::FrontendConfig& config,
                    uint64_t frame_ID) {
@@ -253,7 +253,7 @@ slam::Frame::Frame(const std::vector<cv::KeyPoint>& keypoints,
   matcher_ = cv::BFMatcher::create(config_.getBFMatcherParam());
 }
 
-std::vector<cv::DMatch> slam::Frame::GetMatches(const slam::Frame& frame, 
+std::vector<cv::DMatch> slam::Frame::GetMatches(const slam::Frame& frame,
                                                 double nn_match_ratio) {
   std::vector<std::vector<cv::DMatch>> matches;
   matcher_->knnMatch(descriptors_, frame.descriptors_, matches, 2);
@@ -280,7 +280,7 @@ std::pair<uint64_t, uint64_t> slam::Frame::GetInitialFrame(cv::DMatch match) {
   return result->second;
 }
 
-void slam::Frame::AddMatchInitial(cv::DMatch match, 
+void slam::Frame::AddMatchInitial(cv::DMatch match,
                                   std::pair<uint64_t, uint64_t> initial) {
   initial_appearances.insert({match.queryIdx, initial});
 }
