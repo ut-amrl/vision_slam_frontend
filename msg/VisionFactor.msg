@@ -1,0 +1,3 @@
+uint64 pose_initial
+uint64 pose_current
+FeatureMatch[] feature_matches

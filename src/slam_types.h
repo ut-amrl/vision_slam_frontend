@@ -40,9 +40,8 @@ struct VisionFeature {
   VisionFeature() {}
   // Convenience constructor: initialize everything.
   VisionFeature(uint64_t id,
-                uint64_t descriptor_id,
                 const Eigen::Vector2f& p) :
-      id(id), descriptor_id(descriptor_id), pixel(p) {}
+      id(id), pixel(p) {}
 };
 
 struct FeatureMatch {
@@ -55,10 +54,8 @@ struct FeatureMatch {
   // Convenience constructor: initialize everything.
   FeatureMatch(uint64_t id_initial,
                uint64_t id_current) :
-    pose_initial(pose_initial),
-    id_initial(initial_id),
-    id_i(pose_i_idx),
-    id_j(pose_j_idx) {}
+    id_initial(id_initial),
+    id_current(id_current) {}
 };
 
 struct VisionFactor {
@@ -73,10 +70,10 @@ struct VisionFactor {
   VisionFactor() {}
   // Convenience constructor: initialize everything.
   VisionFactor(
-      uint64_t pose_i,
-      uint64_t pose_j,
+      uint64_t pose_initial,
+      uint64_t pose_current,
       const std::vector<slam_types::FeatureMatch>& feature_matches) :
-      pose_i(pose_i), pose_j(pose_j), feature_matches(feature_matches) {}
+      pose_initial(pose_initial), pose_current(pose_current), feature_matches(feature_matches) {}
 };
 
 struct RobotPose {

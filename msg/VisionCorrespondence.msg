@@ -1,3 +1,0 @@
-uint64 pose_i
-uint64 pose_j
-VisionCorrespondencePair[] feature_matches

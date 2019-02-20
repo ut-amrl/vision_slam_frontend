@@ -57,13 +57,13 @@ cv::Mat CreateDebugImage(const Frame& frame_one,
                          const VisionFactor& corr) {
   cv::Mat return_image = frame_one.debug_image_.clone();
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
-  for (auto c : corr.feature_matches) {
+  for (const slam_types::FeatureMatch c: corr.feature_matches) {
     cv::circle(return_image,
-               frame_two.keypoints_[c.id_i].pt,
+               frame_two.original_keypoints_[c.id_initial].pt,
                5, CV_RGB(255, 0, 0));
     cv::line(return_image,
-             frame_two.keypoints_[c.id_i].pt,
-             frame_one.keypoints_[c.id_j].pt,
+             frame_two.original_keypoints_[c.id_initial].pt,
+             frame_one.original_keypoints_[c.id_current].pt,
              CV_RGB(0, 255, 0));
   }
   return return_image;
@@ -174,7 +174,8 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
 
 void Frontend::GetFeatureMatches(Frame* frame1_ptr,
                                  Frame* frame2_ptr,
-                                 VisionFactor* correspondence) {
+                                 VisionFactor* correspondence,
+                                 std::vector<uint8_t> &original_points) {
   Frame& frame1 = *frame1_ptr;
   Frame& frame2 = *frame2_ptr;
   vector<FeatureMatch> pairs;
@@ -185,13 +186,10 @@ void Frontend::GetFeatureMatches(Frame* frame1_ptr,
   matches.erase(matches.begin() + num_good_matches, matches.end());
   // Restructure matches, add all keypoints to new list.
   for (auto match : matches) {
-    std::pair<uint64_t, uint64_t> initial = frame1.GetInitialFrame(match);
-    // Add it to the original frame.
-    frame2.AddMatchInitial(match, initial);
+    // Add it to vision factor.
     pairs.push_back(FeatureMatch(match.trainIdx,
-                                 match.queryIdx,
-                                 initial.first,
-                                 initial.second));
+                                 match.queryIdx));
+    original_points[match.queryIdx] = 1;
   }
   *correspondence = VisionFactor(
       frame1.frame_ID_, frame2.frame_ID_, pairs);
@@ -220,9 +218,11 @@ void Frontend::ObserveImage(const cv::Mat& image,
   if (config_.debug_images_) {
     curr_frame.debug_image_ = image;
   }
+  // Keep track of the points that are original to this frame.
+  std::vector<uint8_t> original_point(curr_frame.original_keypoints_.size(), 0); 
   for (Frame& past_frame : frame_list_) {
     VisionFactor matches;
-    GetFeatureMatches(&past_frame, &curr_frame, &matches);
+    GetFeatureMatches(&past_frame, &curr_frame, &matches, original_point);
     // TODO(Jack): verify that this conditional check does not mess up
     // book-keping.
     // if (matches.feature_matches.size() > config_.min_vision_matches) {
@@ -231,13 +231,23 @@ void Frontend::ObserveImage(const cv::Mat& image,
     vision_factors_.push_back(matches);
   }
   vector<VisionFeature> features;
-  for (uint64_t i = 0; i < curr_frame.keypoints_.size(); i++) {
+  for (uint64_t i = 0; i < curr_frame.original_keypoints_.size(); i++) {
     features.push_back(VisionFeature(
-        0,
         i,
-        Vector2f(curr_frame.keypoints_[i].pt.x, curr_frame.keypoints_[i].pt.y))
+        Vector2f(curr_frame.original_keypoints_[i].pt.x, curr_frame.original_keypoints_[i].pt.y))
     );
   }
+  // Get rid of all points not original to this frame.
+  std::vector<cv::KeyPoint> new_keypoints;
+  cv::Mat new_descriptors;
+  for (uint64_t i = 0; i < original_point.size(); i++) {
+    if (!original_point[i]) {
+      new_keypoints.push_back(curr_frame.original_keypoints_[i]);
+      new_descriptors.push_back(curr_frame.original_descriptors_.row(i));
+    }
+  }
+  curr_frame.original_keypoints_ = new_keypoints;
+  curr_frame.original_descriptors_ = new_descriptors;
   const Vector3f loc =  init_odom_rotation_.inverse() *
       (odom_translation_ - init_odom_translation_);
   const Quaternionf angle = odom_rotation_ * init_odom_rotation_.inverse();
@@ -296,8 +306,8 @@ Frame::Frame(const vector<cv::KeyPoint>& keypoints,
              const cv::Mat& descriptors,
              const FrontendConfig& config,
              uint64_t frame_ID) {
-  keypoints_ = keypoints;
-  descriptors_ = descriptors;
+  original_keypoints_ = keypoints;
+  original_descriptors_ = descriptors;
   config_ = config;
   frame_ID_ = frame_ID;
   matcher_ = cv::BFMatcher::create(config_.bf_matcher_param_);
@@ -306,7 +316,7 @@ Frame::Frame(const vector<cv::KeyPoint>& keypoints,
 vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
                                      double nn_match_ratio) {
   vector<vector<cv::DMatch>> matches;
-  matcher_->knnMatch(descriptors_, frame.descriptors_, matches, 2);
+  matcher_->knnMatch(original_descriptors_, frame.original_descriptors_, matches, 2);
   vector<cv::DMatch> best_matches;
   for (size_t i = 0; i < matches.size(); i++) {
     cv::DMatch first = matches[i][0];

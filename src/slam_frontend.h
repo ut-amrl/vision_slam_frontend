@@ -80,8 +80,8 @@ class Frame {
                        std::pair<uint64_t, uint64_t> initial);
   uint64_t frame_ID_;
   cv::Ptr<cv::BFMatcher> matcher_;
-  std::vector<cv::KeyPoint> keypoints_;
-  cv::Mat descriptors_;
+  std::vector<cv::KeyPoint> original_keypoints_;
+  cv::Mat original_descriptors_;
   FrontendConfig config_;
   std::unordered_map<uint64_t,
                      std::pair<uint64_t, uint64_t>> initial_appearances;
@@ -118,7 +118,8 @@ class Frontend {
   // to track the initial frame for all matches.
   void GetFeatureMatches(Frame* frame1,
                          Frame* frame2,
-                         slam_types::VisionFactor* correspondence);
+                         slam_types::VisionFactor* correspondence,
+                         std::vector<uint8_t> &original_points);
   // Create a new odometry factor, and reset odometry tracking variables.
   void AddOdometryFactor();
 

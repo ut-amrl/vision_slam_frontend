@@ -1,4 +1,0 @@
-uint64 pose_i_index
-uint64 pose_j_index
-uint64 pose_initial
-uint64 pose_initial_index

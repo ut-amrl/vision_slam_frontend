@@ -87,7 +87,7 @@ void CompressedImageCallback(sensor_msgs::CompressedImage& msg,
   if (FLAGS_v > 1) {
     printf("CompressedImage t=%f\n", image_time);
   }
-  cv::Mat image = cv::imdecode(cv::InputArray(msg.data),1);
+  cv::Mat image = cv::imdecode(cv::InputArray(msg.data), CV_LOAD_IMAGE_GRAYSCALE);
   if (msg.format.find("bayer_rggb8") != string::npos) {
     cv::Mat1b *image_channels = new cv::Mat1b[image.channels()];
     cv::split(image, image_channels);
@@ -145,8 +145,8 @@ void PublishVisualization(const SLAMProblem& problem,
     AddLine(loc1, loc2, Color4f::kGreen, &odom_marker);
   }
   for (const VisionFactor& factor : problem.vision_factors) {
-    const Vector3f& loc1 = problem.nodes[factor.pose_i].pose.loc;
-    const Vector3f& loc2 = problem.nodes[factor.pose_j].pose.loc;
+    const Vector3f& loc1 = problem.nodes[factor.pose_initial].pose.loc;
+    const Vector3f& loc2 = problem.nodes[factor.pose_current].pose.loc;
     AddLine(loc1, loc2, Color4f::kBlue, &vision_marker);
   }
   MarkerArray markers;
@@ -235,10 +235,10 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
                                                       SLAMNodeToRos(node));
   }
   for (auto corr : corrs) {
-    output_bag.write<vision_slam_frontend::VisionCorrespondence>(
+    output_bag.write<vision_slam_frontend::VisionFactor>(
         "slam_corrs",
         ros::Time::now(),
-        VisionCorrespondenceToRos(corr));
+        VisionFactorToRos(corr));
   }
   uint64_t count = 0;
   for (auto im: debug_images) {
