@@ -34,9 +34,6 @@ namespace slam_types {
 struct VisionFeature {
   // ID of feature, unique to node.
   uint64_t id;
-  // Descriptor ID of feature. In practice this will be dependent on the
-  // descriptor type.
-  uint64_t descriptor_id;
   // Camera pixel location of feature.
   Eigen::Vector2f pixel;
   // Default constructor: do nothing.
@@ -49,21 +46,15 @@ struct VisionFeature {
 };
 
 struct FeatureMatch {
-  // ID of initial pose from where this feature was observed.
-  uint64_t pose_initial;
-  // Feature ID from the initial pose where this feature was observed.
+  // Feature ID from the initial pose.
   uint64_t id_initial;
-  // Feature ID from first pose.
-  uint64_t id_i;
-  // Feature ID from second pose.
-  uint64_t id_j;
+  // Feature ID from current pose.
+  uint64_t id_current;
   // Default constructor: do nothing.
   FeatureMatch() {}
   // Convenience constructor: initialize everything.
-  FeatureMatch(uint64_t pose_i_idx,
-               uint64_t pose_j_idx,
-               uint64_t pose_initial,
-               uint64_t initial_id) :
+  FeatureMatch(uint64_t id_initial,
+               uint64_t id_current) :
     pose_initial(pose_initial),
     id_initial(initial_id),
     id_i(pose_i_idx),
@@ -71,10 +62,10 @@ struct FeatureMatch {
 };
 
 struct VisionFactor {
-  // ID of first pose.
-  uint64_t pose_i;
+  // ID of the pose where the features were *first* observed.
+  uint64_t pose_initial;
   // ID of second pose.
-  uint64_t pose_j;
+  uint64_t pose_current;
   // Pair of feature ID from first pose, and feature ID from second pose,
   // and feature ID from initial pose.
   std::vector<FeatureMatch> feature_matches;
