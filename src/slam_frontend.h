@@ -120,8 +120,7 @@ class Frontend {
   // to track the initial frame for all matches.
   void GetFeatureMatches(Frame* frame1,
                          Frame* frame2,
-                         slam_types::VisionFactor* correspondence,
-                         std::vector<uint8_t> &original_points);
+                         slam_types::VisionFactor* correspondence);
   // Create a new odometry factor, and reset odometry tracking variables.
   void AddOdometryFactor();
 

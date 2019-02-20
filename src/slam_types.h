@@ -73,7 +73,8 @@ struct VisionFactor {
       uint64_t pose_initial,
       uint64_t pose_current,
       const std::vector<slam_types::FeatureMatch>& feature_matches) :
-      pose_initial(pose_initial), pose_current(pose_current), feature_matches(feature_matches) {}
+      pose_initial(pose_initial), pose_current(pose_current),
+      feature_matches(feature_matches) {}
 };
 
 struct RobotPose {
@@ -140,16 +141,12 @@ struct SLAMNode {
 struct SLAMProblem {
   // Nodes in the pose graph.
   std::vector<SLAMNode> nodes;
-
   // Vision correspondences.
   std::vector<VisionFactor> vision_factors;
-
   // Odometry / IMU correspondences.
   std::vector<OdometryFactor> odometry_factors;
-
   // Default constructor, do nothing.
   SLAMProblem() {}
-
   // Convenience constructor for initialization.
   SLAMProblem(const std::vector<SLAMNode>& nodes,
               const std::vector<VisionFactor>& vision_factors,

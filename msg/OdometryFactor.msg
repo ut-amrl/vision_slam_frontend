@@ -1,0 +1,4 @@
+uint64 pose_i
+uint64 pose_j
+geometry_msgs/Vector3 translation
+geometry_msgs/Quaternion rotation

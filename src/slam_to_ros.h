@@ -1,3 +1,24 @@
+//========================================================================
+//  This software is free: you can redistribute it and/or modify
+//  it under the terms of the GNU Lesser General Public License Version 3,
+//  as published by the Free Software Foundation.
+//
+//  This software is distributed in the hope that it will be useful,
+//  but WITHOUT ANY WARRANTY; without even the implied warranty of
+//  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+//  GNU Lesser General Public License for more details.
+//
+//  You should have received a copy of the GNU Lesser General Public License
+//  Version 3 in the file COPYING that came with this distribution.
+//  If not, see <http://www.gnu.org/licenses/>.
+//========================================================================
+/*!
+\file    slam_frontend.cc
+\brief   Slam types to ros message conversions
+\author  Joydeep Biswas, (C) 2019
+*/
+//========================================================================
+
 #ifndef __SLAM_TO_ROS_H__
 #define __SLAM_TO_ROS_H__
 
@@ -6,9 +27,11 @@
 #include "vision_slam_frontend/FeatureMatch.h"
 #include "vision_slam_frontend/VisionFeature.h"
 #include "vision_slam_frontend/VisionFactor.h"
+#include "vision_slam_frontend/SLAMProblem.h"
+#include "vision_slam_frontend/OdometryFactor.h"
 #include "slam_types.h"
-#include <geometry_msgs/Quaternion.h>
-#include <geometry_msgs/Vector3.h>
+#include "geometry_msgs/Quaternion.h"
+#include "geometry_msgs/Vector3.h"
 
 static vision_slam_frontend::FeatureMatch
 FeatureMatchToRos(const slam_types::FeatureMatch& pair) {
@@ -25,7 +48,6 @@ VisionFeatureToRos(const slam_types::VisionFeature& feature) {
   ros_feature.pixel.y = feature.pixel[1];
   ros_feature.pixel.z = feature.pixel[2];
   ros_feature.id = feature.id;
-  //Add Feature Point when used.
   return ros_feature;
 }
 
@@ -48,7 +70,7 @@ SLAMNodeToRos(const slam_types::SLAMNode& node) {
   ros_node.id = node.id;
   ros_node.timestamp = node.timestamp;
   ros_node.pose = RobotPoseToRos(node.pose);
-  for (auto p: node.features) {
+  for (auto p : node.features) {
     ros_node.features.push_back(VisionFeatureToRos(p));
   }
   return ros_node;
@@ -59,10 +81,40 @@ VisionFactorToRos(const slam_types::VisionFactor& corr) {
   vision_slam_frontend::VisionFactor ros_corr;
   ros_corr.pose_current = corr.pose_current;
   ros_corr.pose_initial = corr.pose_initial;
-  for (auto m: corr.feature_matches) {
+  for (auto m : corr.feature_matches) {
     ros_corr.feature_matches.push_back(FeatureMatchToRos(m));
   }
   return ros_corr;
 }
 
-#endif //__SLAM_TO_ROS_H__
+static vision_slam_frontend::OdometryFactor
+OdometryFactorToRos(const slam_types::OdometryFactor& odom_f) {
+  vision_slam_frontend::OdometryFactor ros_odom_f;
+  ros_odom_f.pose_i = odom_f.pose_i;
+  ros_odom_f.pose_j = odom_f.pose_j;
+  ros_odom_f.rotation.w = odom_f.rotation.w();
+  ros_odom_f.rotation.x = odom_f.rotation.x();
+  ros_odom_f.rotation.y = odom_f.rotation.y();
+  ros_odom_f.rotation.z = odom_f.rotation.z();
+  ros_odom_f.translation.x = odom_f.translation[0];
+  ros_odom_f.translation.y = odom_f.translation[1];
+  ros_odom_f.translation.z = odom_f.translation[2];
+  return ros_odom_f;
+}
+
+static vision_slam_frontend::SLAMProblem
+SLAMProblemToRos(const slam_types::SLAMProblem& problem) {
+  vision_slam_frontend::SLAMProblem ros_problem;
+  for (auto node : problem.nodes) {
+    ros_problem.nodes.push_back(SLAMNodeToRos(node));
+  }
+  for (auto vfactor : problem.vision_factors) {
+    ros_problem.vision_factors.push_back(VisionFactorToRos(vfactor));
+  }
+  for (auto ofactor : problem.odometry_factors) {
+    ros_problem.odometry_factors.push_back(OdometryFactorToRos(ofactor));
+  }
+  return ros_problem;
+}
+
+#endif  // __SLAM_TO_ROS_H__

@@ -57,7 +57,7 @@ cv::Mat CreateDebugImage(const Frame& frame_initial,
                          const VisionFactor& corr) {
   cv::Mat return_image = frame_current.debug_image_.clone();
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
-  for (const slam_types::FeatureMatch c: corr.feature_matches) {
+  for (const slam_types::FeatureMatch c : corr.feature_matches) {
     cv::circle(return_image,
                frame_initial.keypoints_[c.id_initial].pt,
                5, CV_RGB(255, 0, 0));
@@ -174,8 +174,7 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
 
 void Frontend::GetFeatureMatches(Frame* past_frame_ptr,
                                  Frame* curr_frame_ptr,
-                                 VisionFactor* correspondence,
-                                 std::vector<uint8_t> &original_points) {
+                                 VisionFactor* correspondence) {
   Frame& past_frame = *past_frame_ptr;
   Frame& curr_frame = *curr_frame_ptr;
   vector<FeatureMatch> pairs;
@@ -189,11 +188,14 @@ void Frontend::GetFeatureMatches(Frame* past_frame_ptr,
     // Add it to vision factor.
     pairs.push_back(FeatureMatch(match.queryIdx,
                                  match.trainIdx));
+    // Check if this is the first time we are seeing this match.
+    // If it is not, then mark it where it was first seen.
     if (curr_frame.is_initial_[match.trainIdx]) {
       curr_frame.is_initial_[match.trainIdx] = false;
       curr_frame.initial_ids_[match.trainIdx] =
-          (past_frame.is_initial_[match.queryIdx])? past_frame.frame_ID_ :
-                                                    past_frame.initial_ids_[match.queryIdx];
+          (past_frame.is_initial_[match.queryIdx])?
+           past_frame.frame_ID_ :
+           past_frame.initial_ids_[match.queryIdx];
     }
   }
   *correspondence = VisionFactor(
@@ -224,7 +226,7 @@ void Frontend::ObserveImage(const cv::Mat& image,
     curr_frame.debug_image_ = image;
   }
   // Keep track of the points that are original to this frame.
-  std::vector<uint8_t> original_point(curr_frame.keypoints_.size(), 0); 
+  std::vector<uint8_t> original_point(curr_frame.keypoints_.size(), 0);
   for (Frame& past_frame : frame_list_) {
     VisionFactor matches;
     GetFeatureMatches(&past_frame, &curr_frame, &matches, original_point);
@@ -239,8 +241,8 @@ void Frontend::ObserveImage(const cv::Mat& image,
   for (uint64_t i = 0; i < curr_frame.keypoints_.size(); i++) {
     features.push_back(VisionFeature(
         i,
-        Vector2f(curr_frame.keypoints_[i].pt.x, curr_frame.keypoints_[i].pt.y))
-    );
+        Vector2f(curr_frame.keypoints_[i].pt.x,
+                 curr_frame.keypoints_[i].pt.y)));
   }
   const Vector3f loc =  init_odom_rotation_.inverse() *
       (odom_translation_ - init_odom_translation_);
@@ -256,17 +258,13 @@ void Frontend::ObserveImage(const cv::Mat& image,
   prev_odom_rotation_ = odom_rotation_;
   prev_odom_translation_ = odom_translation_;
   curr_frame_ID_++;
-  if (config_.debug_images_ && !frame_list_.empty() && !vision_factors_.empty()) {
+  if (config_.debug_images_ &&
+      !frame_list_.empty()  &&
+      !vision_factors_.empty()) {
     const slam_types::VisionFactor factor = vision_factors_.back();
-    const uint64_t initial_frame_id = factor.pose_initial;
-    const Frame* initial_frame = NULL;
-    for (uint64_t i = 0; i < frame_list_.size(); ++i) {
-      if (frame_list_[i].frame_ID_ == initial_frame_id) {
-        initial_frame = &frame_list_[i];
-      }
-    }
-    assert(initial_frame != NULL);
-    debug_images_.push_back(CreateDebugImage(*initial_frame,
+    const Frame initial_frame = frame_list_.back();
+    assert(factor.pose_initial == initial_frame.frame_ID_);
+    debug_images_.push_back(CreateDebugImage(initial_frame,
                                              curr_frame,
                                              vision_factors_.back()));
   }
@@ -354,7 +352,7 @@ void Frame::AddMatchInitial(cv::DMatch match,
 
 FrontendConfig::FrontendConfig() {
   // Load Default values
-  debug_images_ = true;
+  debug_images_ = FLAGS_v > 0;
   descriptor_extract_type_ = FrontendConfig::DescriptorExtractorType::AKAZE;
   best_percent_ = 0.3f;
   nn_match_ratio_ = 0.8f;
