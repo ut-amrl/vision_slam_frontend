@@ -80,8 +80,10 @@ class Frame {
                        std::pair<uint64_t, uint64_t> initial);
   uint64_t frame_ID_;
   cv::Ptr<cv::BFMatcher> matcher_;
-  std::vector<cv::KeyPoint> original_keypoints_;
-  cv::Mat original_descriptors_;
+  std::vector<cv::KeyPoint> keypoints_;
+  std::vector<bool> is_initial_;
+  std::vector<int64_t> initial_ids_;
+  cv::Mat descriptors_;
   FrontendConfig config_;
   std::unordered_map<uint64_t,
                      std::pair<uint64_t, uint64_t>> initial_appearances;

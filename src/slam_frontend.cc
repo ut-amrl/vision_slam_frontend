@@ -52,18 +52,18 @@ using Eigen::Vector3f;
 
 namespace slam {
 
-cv::Mat CreateDebugImage(const Frame& frame_one,
-                         const Frame& frame_two,
+cv::Mat CreateDebugImage(const Frame& frame_initial,
+                         const Frame& frame_current,
                          const VisionFactor& corr) {
-  cv::Mat return_image = frame_one.debug_image_.clone();
+  cv::Mat return_image = frame_current.debug_image_.clone();
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
   for (const slam_types::FeatureMatch c: corr.feature_matches) {
     cv::circle(return_image,
-               frame_two.original_keypoints_[c.id_initial].pt,
+               frame_initial.keypoints_[c.id_initial].pt,
                5, CV_RGB(255, 0, 0));
     cv::line(return_image,
-             frame_two.original_keypoints_[c.id_initial].pt,
-             frame_one.original_keypoints_[c.id_current].pt,
+             frame_initial.keypoints_[c.id_initial].pt,
+             frame_current.keypoints_[c.id_current].pt,
              CV_RGB(0, 255, 0));
   }
   return return_image;
@@ -172,27 +172,32 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
   *frame = Frame(frame_keypoints, frame_descriptors, config_, curr_frame_ID_);
 }
 
-void Frontend::GetFeatureMatches(Frame* frame1_ptr,
-                                 Frame* frame2_ptr,
+void Frontend::GetFeatureMatches(Frame* past_frame_ptr,
+                                 Frame* curr_frame_ptr,
                                  VisionFactor* correspondence,
                                  std::vector<uint8_t> &original_points) {
-  Frame& frame1 = *frame1_ptr;
-  Frame& frame2 = *frame2_ptr;
+  Frame& past_frame = *past_frame_ptr;
+  Frame& curr_frame = *curr_frame_ptr;
   vector<FeatureMatch> pairs;
   vector<cv::DMatch> matches =
-        frame2.GetMatches(frame1, config_.nn_match_ratio_);
+        past_frame.GetMatches(curr_frame, config_.nn_match_ratio_);
   std::sort(matches.begin(), matches.end());
   const int num_good_matches = matches.size() * config_.best_percent_;
   matches.erase(matches.begin() + num_good_matches, matches.end());
   // Restructure matches, add all keypoints to new list.
   for (auto match : matches) {
     // Add it to vision factor.
-    pairs.push_back(FeatureMatch(match.trainIdx,
-                                 match.queryIdx));
-    original_points[match.queryIdx] = 1;
+    pairs.push_back(FeatureMatch(match.queryIdx,
+                                 match.trainIdx));
+    if (curr_frame.is_initial_[match.trainIdx]) {
+      curr_frame.is_initial_[match.trainIdx] = false;
+      curr_frame.initial_ids_[match.trainIdx] =
+          (past_frame.is_initial_[match.queryIdx])? past_frame.frame_ID_ :
+                                                    past_frame.initial_ids_[match.queryIdx];
+    }
   }
   *correspondence = VisionFactor(
-      frame1.frame_ID_, frame2.frame_ID_, pairs);
+      past_frame.frame_ID_, curr_frame.frame_ID_, pairs);
 }
 
 void Frontend::AddOdometryFactor() {
@@ -219,7 +224,7 @@ void Frontend::ObserveImage(const cv::Mat& image,
     curr_frame.debug_image_ = image;
   }
   // Keep track of the points that are original to this frame.
-  std::vector<uint8_t> original_point(curr_frame.original_keypoints_.size(), 0); 
+  std::vector<uint8_t> original_point(curr_frame.keypoints_.size(), 0); 
   for (Frame& past_frame : frame_list_) {
     VisionFactor matches;
     GetFeatureMatches(&past_frame, &curr_frame, &matches, original_point);
@@ -231,23 +236,12 @@ void Frontend::ObserveImage(const cv::Mat& image,
     vision_factors_.push_back(matches);
   }
   vector<VisionFeature> features;
-  for (uint64_t i = 0; i < curr_frame.original_keypoints_.size(); i++) {
+  for (uint64_t i = 0; i < curr_frame.keypoints_.size(); i++) {
     features.push_back(VisionFeature(
         i,
-        Vector2f(curr_frame.original_keypoints_[i].pt.x, curr_frame.original_keypoints_[i].pt.y))
+        Vector2f(curr_frame.keypoints_[i].pt.x, curr_frame.keypoints_[i].pt.y))
     );
   }
-  // Get rid of all points not original to this frame.
-  std::vector<cv::KeyPoint> new_keypoints;
-  cv::Mat new_descriptors;
-  for (uint64_t i = 0; i < original_point.size(); i++) {
-    if (!original_point[i]) {
-      new_keypoints.push_back(curr_frame.original_keypoints_[i]);
-      new_descriptors.push_back(curr_frame.original_descriptors_.row(i));
-    }
-  }
-  curr_frame.original_keypoints_ = new_keypoints;
-  curr_frame.original_descriptors_ = new_descriptors;
   const Vector3f loc =  init_odom_rotation_.inverse() *
       (odom_translation_ - init_odom_translation_);
   const Quaternionf angle = odom_rotation_ * init_odom_rotation_.inverse();
@@ -262,9 +256,18 @@ void Frontend::ObserveImage(const cv::Mat& image,
   prev_odom_rotation_ = odom_rotation_;
   prev_odom_translation_ = odom_translation_;
   curr_frame_ID_++;
-  if (config_.debug_images_ && !frame_list_.empty()) {
-    debug_images_.push_back(CreateDebugImage(curr_frame,
-                                             frame_list_.back(),
+  if (config_.debug_images_ && !frame_list_.empty() && !vision_factors_.empty()) {
+    const slam_types::VisionFactor factor = vision_factors_.back();
+    const uint64_t initial_frame_id = factor.pose_initial;
+    const Frame* initial_frame = NULL;
+    for (uint64_t i = 0; i < frame_list_.size(); ++i) {
+      if (frame_list_[i].frame_ID_ == initial_frame_id) {
+        initial_frame = &frame_list_[i];
+      }
+    }
+    assert(initial_frame != NULL);
+    debug_images_.push_back(CreateDebugImage(*initial_frame,
+                                             curr_frame,
                                              vision_factors_.back()));
   }
   if (frame_list_.size() >= config_.frame_life_) {
@@ -306,17 +309,19 @@ Frame::Frame(const vector<cv::KeyPoint>& keypoints,
              const cv::Mat& descriptors,
              const FrontendConfig& config,
              uint64_t frame_ID) {
-  original_keypoints_ = keypoints;
-  original_descriptors_ = descriptors;
+  keypoints_ = keypoints;
+  descriptors_ = descriptors;
   config_ = config;
   frame_ID_ = frame_ID;
   matcher_ = cv::BFMatcher::create(config_.bf_matcher_param_);
+  is_initial_ = std::vector<bool>(keypoints_.size(), true);
+  initial_ids_ = std::vector<int64_t>(keypoints_.size(), -1);
 }
 
 vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
                                      double nn_match_ratio) {
   vector<vector<cv::DMatch>> matches;
-  matcher_->knnMatch(original_descriptors_, frame.original_descriptors_, matches, 2);
+  matcher_->knnMatch(descriptors_, frame.descriptors_, matches, 2);
   vector<cv::DMatch> best_matches;
   for (size_t i = 0; i < matches.size(); i++) {
     cv::DMatch first = matches[i][0];
