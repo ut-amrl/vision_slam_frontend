@@ -75,9 +75,6 @@ class Frame {
   Frame() {}
   std::vector<cv::DMatch> GetMatches(const slam::Frame& frame,
                                      double nn_match_ratio);
-  std::pair<uint64_t, uint64_t> GetInitialFrame(cv::DMatch match);
-  void AddMatchInitial(cv::DMatch match,
-                       std::pair<uint64_t, uint64_t> initial);
   uint64_t frame_ID_;
   cv::Ptr<cv::BFMatcher> matcher_;
   std::vector<cv::KeyPoint> keypoints_;
@@ -101,8 +98,6 @@ class Frontend {
   void ObserveOdometry(const Eigen::Vector3f& translation,
                        const Eigen::Quaternionf& rotation,
                        double timestamp);
-  std::vector<slam_types::VisionFactor> getCorrespondences();
-  std::vector<slam_types::SLAMNode> getSLAMNodes();
   std::vector<cv::Mat> getDebugImages();
   // Return the latest debug image.
   cv::Mat GetLastDebugImage();

@@ -220,16 +220,16 @@ void Frontend::ObserveImage(const cv::Mat& image,
   if (!OdomCheck()) {
     return;
   }
+  LOG(INFO) << "Observing Frame at " << frame_list_.size() << std::endl;
   Frame curr_frame;
   ExtractFeatures(image, &curr_frame);
   if (config_.debug_images_) {
     curr_frame.debug_image_ = image;
   }
   // Keep track of the points that are original to this frame.
-  std::vector<uint8_t> original_point(curr_frame.keypoints_.size(), 0);
   for (Frame& past_frame : frame_list_) {
     VisionFactor matches;
-    GetFeatureMatches(&past_frame, &curr_frame, &matches, original_point);
+    GetFeatureMatches(&past_frame, &curr_frame, &matches);
     // TODO(Jack): verify that this conditional check does not mess up
     // book-keping.
     // if (matches.feature_matches.size() > config_.min_vision_matches) {
@@ -266,20 +266,12 @@ void Frontend::ObserveImage(const cv::Mat& image,
     assert(factor.pose_initial == initial_frame.frame_ID_);
     debug_images_.push_back(CreateDebugImage(initial_frame,
                                              curr_frame,
-                                             vision_factors_.back()));
+                                             factor));
   }
   if (frame_list_.size() >= config_.frame_life_) {
     frame_list_.erase(frame_list_.begin());
   }
   frame_list_.push_back(curr_frame);
-}
-
-vector<VisionFactor> Frontend::getCorrespondences() {
-  return vision_factors_;
-}
-
-vector<SLAMNode> Frontend::getSLAMNodes() {
-  return nodes_;
 }
 
 vector<cv::Mat> Frontend::getDebugImages() {
@@ -332,22 +324,6 @@ vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
   return best_matches;
 }
 
-std::pair<uint64_t, uint64_t> Frame::GetInitialFrame(cv::DMatch match) {
-  auto result = initial_appearances.find(match.trainIdx);
-  if (result == initial_appearances.end()) {
-    // We didn't find it in the database, this must be the first time then.
-    auto first_app = std::pair<uint64_t, uint64_t>(frame_ID_, match.trainIdx);
-    initial_appearances.insert({match.trainIdx, first_app});
-    return first_app;
-  }
-  return result->second;
-}
-
-void Frame::AddMatchInitial(cv::DMatch match,
-                            std::pair<uint64_t, uint64_t> initial) {
-  initial_appearances.insert({match.queryIdx, initial});
-}
-
 /* --- Config Implementation Code --- */
 
 FrontendConfig::FrontendConfig() {
@@ -357,7 +333,6 @@ FrontendConfig::FrontendConfig() {
   best_percent_ = 0.3f;
   nn_match_ratio_ = 0.8f;
   frame_life_ = 5;
-  bf_matcher_param_ = cv::NORM_HAMMING;
   min_odom_rotation = 10.0 / 180.0 * M_PI;
   min_odom_translation = 0.2;
   min_vision_matches = 10;
