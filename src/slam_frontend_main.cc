@@ -193,12 +193,12 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
           message.instantiate<sensor_msgs::CompressedImage>();
       if (image_msg != NULL) {
         CompressedImageCallback(*image_msg, &slam_frontend);
-        /*static std_msgs::Header debug_image_header;
+        static std_msgs::Header debug_image_header;
         debug_image_header.seq++;
         debug_image_header.stamp = ros::Time::now();
         img_tranform.image = slam_frontend.GetLastDebugImage();
         img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
-        image_publisher.publish(img_tranform.toImageMsg());*/
+        image_publisher.publish(img_tranform.toImageMsg());
       }
     }
     {
