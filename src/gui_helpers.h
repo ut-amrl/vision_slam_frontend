@@ -102,6 +102,11 @@ void AddPoint(const Vector3& v,
   msg->colors.push_back(StdColor(color));
 }
 
+void ClearMarker(visualization_msgs::Marker* msg) {
+  msg->points.clear();
+  msg->colors.clear();
+}
+
 }  // namespace gui_helpers
 
 #endif  // GUI_HELPERS_H

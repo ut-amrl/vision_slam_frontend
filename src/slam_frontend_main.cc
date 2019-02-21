@@ -49,6 +49,7 @@
 #include "slam_to_ros.h"
 
 
+using gui_helpers::ClearMarker;
 using gui_helpers::Color4f;
 using gui_helpers::AddPoint;
 using gui_helpers::AddLine;
@@ -136,6 +137,9 @@ void PublishVisualization(const SLAMProblem& problem,
         Marker::LINE_LIST, Color4f::kBlue, 0.01, 0, 0, &vision_marker);
     initialized = true;
   }
+  ClearMarker(&nodes_marker);
+  ClearMarker(&odom_marker);
+  ClearMarker(&vision_marker);
   for (const SLAMNode& node :  problem.nodes) {
     AddPoint(node.pose.loc, Color4f::kRed, &nodes_marker);
   }
