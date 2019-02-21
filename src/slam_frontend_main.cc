@@ -30,6 +30,7 @@
 
 #include "glog/logging.h"
 #include "opencv2/opencv.hpp"
+#include "opencv2/imgcodecs.hpp"
 #include "gflags/gflags.h"
 #include "eigen3/Eigen/Dense"
 #include "eigen3/Eigen/Geometry"
@@ -87,14 +88,13 @@ void CompressedImageCallback(const sensor_msgs::CompressedImage& msg,
     printf("CompressedImage t=%f\n", image_time);
   }
   cv::Mat image = cv::imdecode(cv::InputArray(msg.data),
-                               CV_LOAD_IMAGE_GRAYSCALE);
+                               cv::ImreadModes::IMREAD_GRAYSCALE);
   if (msg.format.find("bayer_rggb8") != string::npos) {
-    cv::Mat1b *image_channels = new cv::Mat1b[image.channels()];
-    cv::split(image, image_channels);
+    vector<cv::Mat1b> image_channels(image.channels());
+    cv::split(image, image_channels.data());
     image = image_channels[0];
     cv::cvtColor(image_channels[0], image, cv::COLOR_BayerBG2BGR);
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
-    delete [] image_channels;
   }
   frontend->ObserveImage(image, image_time);
   if (FLAGS_visualize) {
