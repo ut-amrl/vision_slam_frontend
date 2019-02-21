@@ -139,7 +139,6 @@ class Frontend {
   FrontendConfig config_;
   // Next frame ID.
   uint64_t curr_frame_ID_;
-  cv::NormTypes bf_matcher_param_;
   std::vector<Frame> frame_list_;
   cv::Ptr<cv::Feature2D> descriptor_extractor_;
   cv::Ptr<cv::FastFeatureDetector> fast_feature_detector_;

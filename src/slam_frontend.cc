@@ -95,7 +95,7 @@ Frontend::Frontend(const string& config_path) :
                                                 10,
                                                 5,
                                                 cv::KAZE::DIFF_PM_G2);
-      bf_matcher_param_ = cv::NORM_HAMMING;
+      config_.bf_matcher_param_ = cv::NORM_HAMMING;
       break;
     }
     case FrontendConfig::DescriptorExtractorType::ORB: {
@@ -108,22 +108,22 @@ Frontend::Frontend(const string& config_path) :
                                               cv::ORB::HARRIS_SCORE,
                                               31,
                                               20);
-      bf_matcher_param_ = cv::NORM_HAMMING;
+      config_.bf_matcher_param_ = cv::NORM_HAMMING;
       break;
     }
     case FrontendConfig::DescriptorExtractorType::BRISK: {
       descriptor_extractor_ = cv::BRISK::create(20, 7, 1.1f);
-      bf_matcher_param_ = cv::NORM_HAMMING;
+      config_.bf_matcher_param_ = cv::NORM_HAMMING;
       break;
     }
     case FrontendConfig::DescriptorExtractorType::SURF: {
       descriptor_extractor_ = cv::xfeatures2d::SURF::create();
-      bf_matcher_param_ = cv::NORM_L2;
+      config_.bf_matcher_param_ = cv::NORM_L2;
       break;
     }
     case FrontendConfig::DescriptorExtractorType::SIFT: {
       descriptor_extractor_ = cv::xfeatures2d::SIFT::create();
-      bf_matcher_param_ = cv::NORM_L2;
+      config_.bf_matcher_param_ = cv::NORM_L2;
       break;
     }
     case FrontendConfig::DescriptorExtractorType::FREAK: {
@@ -131,7 +131,7 @@ Frontend::Frontend(const string& config_path) :
                                                              true,
                                                              40.0f,
                                                              20);
-      bf_matcher_param_ = cv::NORM_HAMMING;
+      config_.bf_matcher_param_ = cv::NORM_HAMMING;
       break;
     }
     default: {

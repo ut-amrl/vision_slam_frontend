@@ -204,12 +204,12 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
         OdometryCallback(*odom_msg, &slam_frontend);
       }
     }
-    /*if (FLAGS_v > 0) {
+    if (FLAGS_v > 0) {
       SLAMProblem problem;
       slam_frontend.GetSLAMProblem(&problem);
       PublishVisualization(problem, &gui_publisher);
+      ros::spinOnce();
     }
-    ros::spinOnce();*/
   }
   printf("Done processing bag file.\n");
   // Publish slam data
