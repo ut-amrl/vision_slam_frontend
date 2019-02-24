@@ -42,6 +42,8 @@ namespace slam {
 struct CameraIntrinsics {
   // Radial distortion parameters.
   float k1, k2, k3;
+  // Tangential distortion parameters.
+  float p1, p2;
   // Focal length x.
   float fx;
   // Focal length y.

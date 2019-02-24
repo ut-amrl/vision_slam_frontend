@@ -383,7 +383,10 @@ FrontendConfig::FrontendConfig() {
   intrinsics.cy = 298.033945;
   intrinsics.k1 = -0.153137;
   intrinsics.k2 = 0.075666;
+  intrinsics.p1 = -0.000227;
+  intrinsics.p2 = -0.000320;
   intrinsics.k3 = -0.000227;
+
 
   camera_matrix = (cv::Mat_<float>(3, 3) <<
       intrinsics.fx,
@@ -398,8 +401,8 @@ FrontendConfig::FrontendConfig() {
   distortion_coeffs = (cv::Mat_<float>(5, 1) <<
       intrinsics.k1,
       intrinsics.k2,
-      0,
-      0,
+      intrinsics.p1,
+      intrinsics.p2,
       intrinsics.k3);
 }
 
