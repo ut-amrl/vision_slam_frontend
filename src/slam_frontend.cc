@@ -398,8 +398,8 @@ FrontendConfig::FrontendConfig() {
   distortion_coeffs = (cv::Mat_<float>(5, 1) <<
       intrinsics.k1,
       intrinsics.k2,
-      intrinsics.p1,
-      intrinsics.p2,
+      0,
+      0,
       intrinsics.k3);
 }
 
