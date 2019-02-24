@@ -50,12 +50,25 @@ using Eigen::Vector3f;
 
 /* --- Frontend Implementation Code --- */
 
+namespace {
+template<typename T>
+Eigen::Matrix<T, 2, 1> OpenCVToEigen(const cv::Point_<T>& p) {
+  return Eigen::Matrix<T, 2, 1>(p.x, p.y);
+}
+
+template<typename T>
+cv::Point_<T> EigenToOpenCV(const Eigen::Matrix<T, 2, 1>& p) {
+  return cv::Point_<T>(p.x(), p.y());
+}
+
+}  // namespace
 namespace slam {
 
-cv::Mat CreateDebugImage(const Frame& frame_initial,
+cv::Mat CreateDebugImage(const cv::Mat& image,
+                         const Frame& frame_initial,
                          const Frame& frame_current,
                          const VisionFactor& corr) {
-  cv::Mat return_image = frame_current.debug_image_.clone();
+  cv::Mat return_image = image.clone();
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
   for (const slam_types::FeatureMatch c : corr.feature_matches) {
     cv::circle(return_image,
@@ -214,18 +227,42 @@ void Frontend::AddOdometryFactor() {
       rotation));
 }
 
-void Frontend::ObserveImage(const cv::Mat& image,
+void Frontend::UndistortFeaturePoints(vector<VisionFeature>* features_ptr) {
+  vector<VisionFeature>& features = *features_ptr;
+  const Vector2f p0(config_.intrinsics.cx, config_.intrinsics.cy);
+  vector<cv::Point2f> distorted_pts;
+  for (size_t i = 0; i < features.size(); ++i) {
+    distorted_pts.push_back(EigenToOpenCV(features[i].pixel));
+  }
+  vector<cv::Point2f> undistorted_pts;
+  cv::undistortPoints(distorted_pts,
+                      undistorted_pts,
+                      config_.camera_matrix,
+                      config_.distortion_coeffs,
+                      cv::noArray(),
+                      config_.camera_matrix);
+  CHECK_EQ(distorted_pts.size(), undistorted_pts.size());
+  for (size_t i = 0; i < features.size(); ++i) {
+    if (false) {
+      printf("[%.3f %.3f] -> [%.3f %.3f]\n",
+             distorted_pts[i].x,
+             distorted_pts[i].y,
+             undistorted_pts[i].x,
+             undistorted_pts[i].y);
+    }
+    features[i].pixel = OpenCVToEigen(undistorted_pts[i]);
+  }
+}
+
+bool Frontend::ObserveImage(const cv::Mat& image,
                             double time) {
   // Check from the odometry if its time to run SLAM
   if (!OdomCheck()) {
-    return;
+    return false;
   }
   LOG(INFO) << "Observing Frame at " << frame_list_.size() << std::endl;
   Frame curr_frame;
   ExtractFeatures(image, &curr_frame);
-  if (config_.debug_images_) {
-    curr_frame.debug_image_ = image;
-  }
   // Keep track of the points that are original to this frame.
   for (Frame& past_frame : frame_list_) {
     VisionFactor matches;
@@ -240,10 +277,9 @@ void Frontend::ObserveImage(const cv::Mat& image,
   vector<VisionFeature> features;
   for (uint64_t i = 0; i < curr_frame.keypoints_.size(); i++) {
     features.push_back(VisionFeature(
-        i,
-        Vector2f(curr_frame.keypoints_[i].pt.x,
-                 curr_frame.keypoints_[i].pt.y)));
+        i, OpenCVToEigen(curr_frame.keypoints_[i].pt)));
   }
+  UndistortFeaturePoints(&features);
   const Vector3f loc =  init_odom_rotation_.inverse() *
       (odom_translation_ - init_odom_translation_);
   const Quaternionf angle = odom_rotation_ * init_odom_rotation_.inverse();
@@ -264,14 +300,14 @@ void Frontend::ObserveImage(const cv::Mat& image,
     const slam_types::VisionFactor factor = vision_factors_.back();
     const Frame initial_frame = frame_list_.back();
     assert(factor.pose_initial == initial_frame.frame_ID_);
-    debug_images_.push_back(CreateDebugImage(initial_frame,
-                                             curr_frame,
-                                             factor));
+    debug_images_.push_back(
+        CreateDebugImage(image, initial_frame, curr_frame, factor));
   }
   if (frame_list_.size() >= config_.frame_life_) {
     frame_list_.erase(frame_list_.begin());
   }
   frame_list_.push_back(curr_frame);
+  return true;
 }
 
 vector<cv::Mat> Frontend::getDebugImages() {
@@ -336,6 +372,35 @@ FrontendConfig::FrontendConfig() {
   min_odom_rotation = 10.0 / 180.0 * M_PI;
   min_odom_translation = 0.2;
   min_vision_matches = 10;
+
+  // Taken from Campus-Jackal repo:
+  // https://github.com/umass-amrl/Campus-Jackal/blob/master/hardware/
+  //    calibration/PointGreyCalibration/6_Aug_24_18/jpp/
+  //    pointgrey_calib_6_Aug_24_18.yaml
+  intrinsics.fx = 527.873518;
+  intrinsics.cx = 482.823413;
+  intrinsics.fy = 527.276819;
+  intrinsics.cy = 298.033945;
+  intrinsics.k1 = -0.153137;
+  intrinsics.k2 = 0.075666;
+  intrinsics.k3 = -0.000227;
+
+  camera_matrix = (cv::Mat_<float>(3, 3) <<
+      intrinsics.fx,
+      0,
+      intrinsics.cx,
+      0,
+      intrinsics.fy,
+      intrinsics.cy,
+      0,
+      0,
+      1);
+  distortion_coeffs = (cv::Mat_<float>(5, 1) <<
+      intrinsics.k1,
+      intrinsics.k2,
+      intrinsics.p1,
+      intrinsics.p2,
+      intrinsics.k3);
 }
 
 }  // namespace slam

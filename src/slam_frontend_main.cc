@@ -79,10 +79,11 @@ DEFINE_string(odom_topic,
 DEFINE_string(input, "", "Name of ROS bag file to load");
 DEFINE_string(output, "", "Name of ROS bag file to output");
 DEFINE_bool(visualize, false, "Display images loaded");
+DEFINE_int32(max_poses, 0, "Maximum number of SLAM poses to process");
 DECLARE_string(helpon);
 DECLARE_int32(v);
 
-void CompressedImageCallback(const sensor_msgs::CompressedImage& msg,
+bool CompressedImageCallback(const sensor_msgs::CompressedImage& msg,
                              Frontend* frontend) {
   double image_time = msg.header.stamp.toSec();
   if (FLAGS_v > 1) {
@@ -97,7 +98,6 @@ void CompressedImageCallback(const sensor_msgs::CompressedImage& msg,
     cv::cvtColor(image_channels[0], image, cv::COLOR_BayerBG2BGR);
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
   }
-  frontend->ObserveImage(image, image_time);
   if (FLAGS_visualize) {
     cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE);
     cv::imshow("Display Image", image);
@@ -105,6 +105,7 @@ void CompressedImageCallback(const sensor_msgs::CompressedImage& msg,
       exit(0);
     }
   }
+  return frontend->ObserveImage(image, image_time);
 }
 
 void OdometryCallback(const nav_msgs::Odometry& msg,
@@ -180,11 +181,13 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   ros::Publisher image_publisher = n->advertise<sensor_msgs::Image>(
       "slam_frontend/debug_image", 1);
   double bag_t_start = -1;
+  bool max_poses_processed = false;
   // Iterate for every message.
   for (rosbag::View::iterator it = view.begin();
-       ros::ok() && it != view.end();
+       ros::ok() && it != view.end() && !max_poses_processed;
        ++it) {
     const rosbag::MessageInstance& message = *it;
+    bool new_pose_added = false;
     if (bag_t_start < 0.0) {
       bag_t_start = message.getTime().toSec();
     }
@@ -192,13 +195,19 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       sensor_msgs::CompressedImagePtr image_msg =
           message.instantiate<sensor_msgs::CompressedImage>();
       if (image_msg != NULL) {
-        CompressedImageCallback(*image_msg, &slam_frontend);
-        static std_msgs::Header debug_image_header;
-        debug_image_header.seq++;
-        debug_image_header.stamp = ros::Time::now();
-        img_tranform.image = slam_frontend.GetLastDebugImage();
-        img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
-        image_publisher.publish(img_tranform.toImageMsg());
+        new_pose_added = CompressedImageCallback(*image_msg, &slam_frontend);
+        if (new_pose_added) {
+          if (FLAGS_max_poses > 0 &&
+              slam_frontend.GetNumPoses() > FLAGS_max_poses) {
+            max_poses_processed = true;
+          }
+          static std_msgs::Header debug_image_header;
+          debug_image_header.seq++;
+          debug_image_header.stamp = ros::Time::now();
+          img_tranform.image = slam_frontend.GetLastDebugImage();
+          img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
+          image_publisher.publish(img_tranform.toImageMsg());
+        }
       }
     }
     {
@@ -208,7 +217,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
         OdometryCallback(*odom_msg, &slam_frontend);
       }
     }
-    if (FLAGS_v > 0) {
+    if (FLAGS_v > 0 && new_pose_added) {
       SLAMProblem problem;
       slam_frontend.GetSLAMProblem(&problem);
       PublishVisualization(problem, &gui_publisher);
@@ -233,6 +242,13 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       "slam_problem",
       ros::Time::now(),
       SLAMProblemToRos(problem));
+  printf("Saved SLAM problem with %d nodes, %d odometry factors, "
+  "%d vision factors (%.2f/pose avg)\n",
+         static_cast<int>(problem.nodes.size()),
+         static_cast<int>(problem.odometry_factors.size()),
+         static_cast<int>(problem.vision_factors.size()),
+         static_cast<float>(problem.vision_factors.size()) /
+         static_cast<float>((problem.nodes.size() - 1)));
   if (FLAGS_v > 0) {
     std::vector<cv::Mat> debug_images = slam_frontend.getDebugImages();
     uint64_t count = 0;

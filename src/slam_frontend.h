@@ -34,6 +34,26 @@
 #include "slam_types.h"
 
 namespace slam {
+
+// Pinhole camera intrinsics parameters.
+// The convention used here matches that of OpenCV:
+// https://docs.opencv.org/2.4/doc/tutorials/calib3d/camera_calibration/
+//     camera_calibration.html
+struct CameraIntrinsics {
+  // Radial distortion parameters.
+  float k1, k2, k3;
+  // Tangential distortion is omitted.
+  static constexpr float p1 = 0, p2 = 0;
+  // Focal length x.
+  float fx;
+  // Focal length y.
+  float fy;
+  // Principal point x.
+  float cx;
+  // Principal point y.
+  float cy;
+};
+
 /* A container for slam configuration data */
 struct FrontendConfig {
  public:
@@ -61,8 +81,15 @@ struct FrontendConfig {
   // The minimum number of feature matches that must exist between a pair of
   // frames to add a vision correspondence feature.
   uint32_t min_vision_matches;
+  // The maximum feature track length -- the maximum number of pose-steps older
+  // than the current pose that should be compared for vision factors.
   uint32_t frame_life_;
+  // Feature matching norm type (e.g. L2, Hamming, etc.).
   cv::NormTypes bf_matcher_param_;
+  // Camera intrinsics.
+  CameraIntrinsics intrinsics;
+  // Derived parameters, computed from intrinsics.
+  cv::Mat camera_matrix, distortion_coeffs;
 };
 
 /* A container for slam node data */
@@ -84,15 +111,15 @@ class Frame {
   FrontendConfig config_;
   std::unordered_map<uint64_t,
                      std::pair<uint64_t, uint64_t>> initial_appearances;
-  cv::Mat debug_image_;
 };
 
 /* The actual processing unit for the entire frontend */
 class Frontend {
  public:
   explicit Frontend(const std::string& config_path);
-  // Observe a new image. Extract features, and match to past frames.
-  void ObserveImage(const cv::Mat& image,
+  // Observe a new image. Extract features, and match to past frames. Returns
+  // true iff a new SLAM node is added to the SLAM problem.
+  bool ObserveImage(const cv::Mat& image,
                     double time);
   // Observe new odometry message.
   void ObserveOdometry(const Eigen::Vector3f& translation,
@@ -104,6 +131,11 @@ class Frontend {
 
   // Get a fully instantiated SLAM problem with the data collected so far.
   void GetSLAMProblem(slam_types::SLAMProblem* problem) const;
+
+  // Get the number od poses (SLAM nodes) added so far.
+  int GetNumPoses() {
+    return nodes_.size();
+  }
 
  private:
   // Returns true iff odometry reports that the robot has moved sufficiently to
@@ -118,6 +150,8 @@ class Frontend {
                          slam_types::VisionFactor* correspondence);
   // Create a new odometry factor, and reset odometry tracking variables.
   void AddOdometryFactor();
+  // Removes radial distortion from all observed feature points.
+  void UndistortFeaturePoints(std::vector<slam_types::VisionFeature>* features);
 
   // Indicates if odometry has been initialized or not.
   bool odom_initialized_;
