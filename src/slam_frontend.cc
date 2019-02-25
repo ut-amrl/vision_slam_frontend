@@ -368,7 +368,7 @@ FrontendConfig::FrontendConfig() {
   descriptor_extract_type_ = FrontendConfig::DescriptorExtractorType::AKAZE;
   best_percent_ = 0.3f;
   nn_match_ratio_ = 0.8f;
-  frame_life_ = 5;
+  frame_life_ = 10;
   min_odom_rotation = 10.0 / 180.0 * M_PI;
   min_odom_translation = 0.2;
   min_vision_matches = 10;
