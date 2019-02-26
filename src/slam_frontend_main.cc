@@ -70,9 +70,12 @@ using Eigen::Vector3f;
 using visualization_msgs::Marker;
 using visualization_msgs::MarkerArray;
 
-DEFINE_string(image_topic,
-              "/camera_right/image_raw/compressed",
-              "Name of ROS topic for image data");
+DEFINE_string(left_image_topic,
+              "/stereo/left/image_raw/compressed",
+              "Name of ROS topic for left camera images");
+DEFINE_string(right_image_topic,
+              "/stereo/right/image_raw/compressed",
+              "Name of ROS topic for right camera images");
 DEFINE_string(odom_topic,
               "/odometry/filtered",
               "Name of ROS topic for odometry data");
@@ -84,6 +87,7 @@ DECLARE_string(helpon);
 DECLARE_int32(v);
 
 bool CompressedImageCallback(const sensor_msgs::CompressedImage& msg,
+                             bool left,
                              Frontend* frontend) {
   double image_time = msg.header.stamp.toSec();
   if (FLAGS_v > 1) {
@@ -172,7 +176,8 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   }
   printf("Processing %s\n", filename);
   vector<string> topics;
-  topics.push_back(FLAGS_image_topic.c_str());
+  topics.push_back(FLAGS_left_image_topic.c_str());
+  topics.push_back(FLAGS_right_image_topic.c_str());
   topics.push_back(FLAGS_odom_topic.c_str());
   rosbag::View view(bag, rosbag::TopicQuery(topics));
   slam::Frontend slam_frontend("");
@@ -195,7 +200,14 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       sensor_msgs::CompressedImagePtr image_msg =
           message.instantiate<sensor_msgs::CompressedImage>();
       if (image_msg != NULL) {
-        new_pose_added = CompressedImageCallback(*image_msg, &slam_frontend);
+        const bool is_left_camera =
+            message.getTopic() == FLAGS_left_image_topic;
+        new_pose_added = CompressedImageCallback(
+            *image_msg, is_left_camera, &slam_frontend);
+        printf("Left: %d seq: %d topic: %s\n",
+               (is_left_camera ? 1 : 0),
+               image_msg->header.seq,
+               message.getTopic().c_str());
         if (new_pose_added) {
           if (FLAGS_max_poses > 0 &&
               slam_frontend.GetNumPoses() > FLAGS_max_poses) {
