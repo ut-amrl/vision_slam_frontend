@@ -87,9 +87,10 @@ struct FrontendConfig {
   // Feature matching norm type (e.g. L2, Hamming, etc.).
   cv::NormTypes bf_matcher_param_;
   // Camera intrinsics.
-  CameraIntrinsics intrinsics;
+  CameraIntrinsics intrinsics_left, intrinsics_right;
   // Derived parameters, computed from intrinsics.
-  cv::Mat camera_matrix, distortion_coeffs;
+  cv::Mat camera_matrix_left, camera_matrix_right, distortion_coeffs_left, 
+      projection_left, projection_right;
 };
 
 /* A container for slam node data */
@@ -119,7 +120,8 @@ class Frontend {
   explicit Frontend(const std::string& config_path);
   // Observe a new image. Extract features, and match to past frames. Returns
   // true iff a new SLAM node is added to the SLAM problem.
-  bool ObserveImage(const cv::Mat& image,
+  bool ObserveImage(const cv::Mat& left_image,
+                    const cv::Mat& right_image,
                     double time);
   // Observe new odometry message.
   void ObserveOdometry(const Eigen::Vector3f& translation,
@@ -152,7 +154,11 @@ class Frontend {
   void AddOdometryFactor();
   // Removes radial distortion from all observed feature points.
   void UndistortFeaturePoints(std::vector<slam_types::VisionFeature>* features);
-
+  // Takes the stereo images of the same scene and uses the corresponding 
+  // matches to get the 3d point estimation.
+  void Calculate3DLocations(Frame* left_frame,
+                            Frame* right_frame,
+                            std::vector<Eigen::Vector3f>* locations);
   // Indicates if odometry has been initialized or not.
   bool odom_initialized_;
   // Initial odometry translation.

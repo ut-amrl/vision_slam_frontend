@@ -36,12 +36,15 @@ struct VisionFeature {
   uint64_t id;
   // Camera pixel location of feature.
   Eigen::Vector2f pixel;
+  // Calculated 3d location
+  Eigen::Vector3f location;
   // Default constructor: do nothing.
   VisionFeature() {}
   // Convenience constructor: initialize everything.
   VisionFeature(uint64_t id,
-                const Eigen::Vector2f& p) :
-      id(id), pixel(p) {}
+                const Eigen::Vector2f& p,
+                const Eigen::Vector3f& loc) :
+      id(id), pixel(p), location(loc) {}
 };
 
 struct FeatureMatch {

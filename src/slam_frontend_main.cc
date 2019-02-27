@@ -86,13 +86,7 @@ DEFINE_int32(max_poses, 0, "Maximum number of SLAM poses to process");
 DECLARE_string(helpon);
 DECLARE_int32(v);
 
-bool CompressedImageCallback(const sensor_msgs::CompressedImage& msg,
-                             bool left,
-                             Frontend* frontend) {
-  double image_time = msg.header.stamp.toSec();
-  if (FLAGS_v > 1) {
-    printf("CompressedImage t=%f\n", image_time);
-  }
+cv::Mat DecodeImage(sensor_msgs::CompressedImage& msg) {
   cv::Mat image = cv::imdecode(cv::InputArray(msg.data),
                                cv::ImreadModes::IMREAD_GRAYSCALE);
   if (msg.format.find("bayer_rggb8") != string::npos) {
@@ -102,14 +96,30 @@ bool CompressedImageCallback(const sensor_msgs::CompressedImage& msg,
     cv::cvtColor(image_channels[0], image, cv::COLOR_BayerBG2BGR);
     cv::cvtColor(image, image, cv::COLOR_BGR2GRAY);
   }
+  return image;
+}
+
+bool CompressedImageCallback(std::pair<sensor_msgs::CompressedImage,
+                                       sensor_msgs::CompressedImage>& img_pair,
+                             Frontend* frontend) {
+  double image_time = img_pair.first.header.stamp.toSec();
+  if (FLAGS_v > 1) {
+    printf("CompressedImage t=%f\n", image_time);
+  }
+  // Decode the left image
+  // Process the left image
+  // Then find the closest point in the left image.
+  // Calculate the Depth and X Y and broadcast based on that.
+  cv::Mat left_image = DecodeImage(img_pair.first);
+  cv::Mat right_image = DecodeImage(img_pair.second);
   if (FLAGS_visualize) {
     cv::namedWindow("Display Image", cv::WINDOW_AUTOSIZE);
-    cv::imshow("Display Image", image);
+    cv::imshow("Display Image", left_image);
     if (cv::waitKey(16) == 27) {
       exit(0);
     }
   }
-  return frontend->ObserveImage(image, image_time);
+  return frontend->ObserveImage(left_image, right_image, image_time);
 }
 
 void OdometryCallback(const nav_msgs::Odometry& msg,
@@ -187,6 +197,8 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       "slam_frontend/debug_image", 1);
   double bag_t_start = -1;
   bool max_poses_processed = false;
+  std::pair<sensor_msgs::CompressedImage, sensor_msgs::CompressedImage>
+      curr_stereo_image_pair;
   // Iterate for every message.
   for (rosbag::View::iterator it = view.begin();
        ros::ok() && it != view.end() && !max_poses_processed;
@@ -202,12 +214,16 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       if (image_msg != NULL) {
         const bool is_left_camera =
             message.getTopic() == FLAGS_left_image_topic;
-        new_pose_added = CompressedImageCallback(
-            *image_msg, is_left_camera, &slam_frontend);
-        printf("Left: %d seq: %d topic: %s\n",
-               (is_left_camera ? 1 : 0),
-               image_msg->header.seq,
-               message.getTopic().c_str());
+        if (is_left_camera) {
+          curr_stereo_image_pair.first = *image_msg;
+          new_pose_added = false;
+        } else {
+          assert(curr_stereo_image_pair.first.header.seq
+              == image_msg->header.seq);
+          curr_stereo_image_pair.second = *image_msg;
+          new_pose_added = CompressedImageCallback(curr_stereo_image_pair,
+                                                   &slam_frontend);
+        }
         if (new_pose_added) {
           if (FLAGS_max_poses > 0 &&
               slam_frontend.GetNumPoses() > FLAGS_max_poses) {
