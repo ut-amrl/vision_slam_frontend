@@ -137,6 +137,11 @@ void OdometryCallback(const nav_msgs::Odometry& msg,
   frontend->ObserveOdometry(odom_loc, odom_angle, msg.header.stamp.toSec());
 }
 
+using std::isfinite;
+bool IsFinite(const Vector3f& p) {
+  return isfinite(p.x()) && isfinite(p.y()) && isfinite(p.z());
+}
+
 void PublishVisualization(const SLAMProblem& problem,
                           ros::Publisher* graph_publisher,
                           ros::Publisher* point_cloud_publisher) {
@@ -158,8 +163,11 @@ void PublishVisualization(const SLAMProblem& problem,
   vision_points_marker.id = 3;
   for (const SLAMNode& node :  problem.nodes) {
     AddPoint(node.pose.loc, Color4f::kRed, &nodes_marker);
+    // TODO(joydeepb): Need to transform points to world coordinates!
     for (const slam_types::VisionFeature& f : node.features) {
-      AddPoint(f.location, Color4f(1, 1, 1, 0.5), &vision_points_marker);
+      if (IsFinite(f.location) && f.location.norm() < 20.0) {
+        AddPoint(f.location, Color4f(1, 1, 1, 0.2), &vision_points_marker);
+      }
     }
   }
   for (const OdometryFactor& factor : problem.odometry_factors) {

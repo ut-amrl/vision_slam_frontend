@@ -47,6 +47,8 @@ using std::vector;
 using Eigen::Quaternionf;
 using Eigen::Vector2f;
 using Eigen::Vector3f;
+using Eigen::Matrix3f;
+using Eigen::Matrix;
 
 /* --- Frontend Implementation Code --- */
 
@@ -73,7 +75,7 @@ void Frontend::Calculate3DLocations(
   std::vector<cv::Point2f> right_points;
   // The reason we pass in right frame first is because we don't want to modify
   // the left frames is_initial_ book-keeping.
-  // This means right will be the 'initial' and the left_frame 
+  // This means right will be the 'initial' and the left_frame
   // will be the 'current' frame.
   VisionFactor matches;
   // Assure that every point has a match.
@@ -82,8 +84,18 @@ void Frontend::Calculate3DLocations(
   GetFeatureMatches(right_frame, left_frame, &matches);
   config_.best_percent_ = best_percent;
   for (FeatureMatch match : matches.feature_matches) {
-    right_points.push_back(right_frame->keypoints_[match.id_initial].pt);
-    left_points.push_back(left_frame->keypoints_[match.id_current].pt);
+    const auto& left_pt = left_frame->keypoints_[match.id_current].pt;
+    const auto& right_pt = right_frame->keypoints_[match.id_initial].pt;
+    // if (fabs(left_pt.y - right_pt.y) > 5) continue;
+    right_points.push_back(right_pt);
+    left_points.push_back(left_pt);
+    if (false) {
+      printf("[%6.1f %6.1f] [%6.1f %6.1f]\n",
+            left_pt.x,
+            left_pt.y,
+            right_pt.x,
+            right_pt.y);
+    }
   }
   cv::Mat triangulated_points;
   cv::triangulatePoints(config_.projection_left,
@@ -92,16 +104,16 @@ void Frontend::Calculate3DLocations(
                         right_points,
                         triangulated_points);
   // Make sure all keypoints are matched to something.
-  assert(triangulated_points.rows == left_frame->keypoints_.size());
-  for (int64_t r = 0; r < triangulated_points.rows; r++) {
-    auto row = triangulated_points.row(r);
-    auto vec = Eigen::Vector3f(row.at<int>(0),
-                               row.at<int>(1),
-                               row.at<int>(2));
+  CHECK_EQ(triangulated_points.cols, matches.feature_matches.size());
+  for (int64_t c = 0; c < triangulated_points.cols; ++c) {
+    auto col = triangulated_points.col(c);
+    auto vec = Eigen::Vector3f(col.ptr<float>()[0],
+                               col.ptr<float>()[1],
+                               col.ptr<float>()[2]);
     locations->push_back(vec);
   }
 }
-  
+
 cv::Mat CreateDebugImage(const cv::Mat& image,
                          const Frame& frame_initial,
                          const Frame& frame_current,
@@ -407,6 +419,24 @@ vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
 
 /* --- Config Implementation Code --- */
 
+Matrix3f CameraMatrix(const CameraIntrinsics& I) {
+  Matrix3f M;
+  M << I.fx, 0, I.cx,
+       0, I.fy, I.cy,
+       0, 0, 1;
+  return M;
+}
+
+void EigenToOpenCV(const Matrix<float, 3, 4>& m1,
+                   cv::Mat* m2_ptr) {
+  cv::Mat& m2 = *m2_ptr;
+  for (int r = 0; r < 3; ++r) {
+    for (int c = 0; c < 4; ++c) {
+      m2.ptr<float>(r)[c] = m1(r, c);
+    }
+  }
+}
+
 FrontendConfig::FrontendConfig() {
   // Load Default values
   debug_images_ = FLAGS_v > 0;
@@ -431,7 +461,7 @@ FrontendConfig::FrontendConfig() {
   intrinsics_left.p1 = -0.000227;
   intrinsics_left.p2 = -0.000320;
   intrinsics_left.k3 = -0.000227; //TODO(Joydeep): Should this be 0?
-  
+
   intrinsics_right.fx = 530.158021;
   intrinsics_right.cx = 475.540633;
   intrinsics_right.fy = 529.682234;
@@ -443,64 +473,52 @@ FrontendConfig::FrontendConfig() {
   intrinsics_right.k3 = -0.000779;
 
   camera_matrix_left = (cv::Mat_<float>(3, 3) <<
-      intrinsics_left.fx,
-      0,
-      intrinsics_left.cx,
-      0,
-      intrinsics_left.fy,
-      intrinsics_left.cy,
-      0,
-      0,
-      1);
-  projection_left = cv::Mat::zeros(3, 4, CV_32F);
-  cv::Mat cam_left(projection_left, cv::Rect(0, 0, 3, 3));
-  camera_matrix_left.copyTo(cam_left);
+      intrinsics_left.fx, 0, intrinsics_left.cx,
+      0, intrinsics_left.fy, intrinsics_left.cy,
+      0, 0, 1);
+
   camera_matrix_right = (cv::Mat_<float>(3, 3) <<
-      intrinsics_right.fx,
-      0,
-      intrinsics_right.cx,
-      0,
-      intrinsics_right.fy,
-      intrinsics_right.cy,
-      0,
-      0,
-      1);
+      intrinsics_right.fx, 0, intrinsics_right.cx,
+      0, intrinsics_right.fy, intrinsics_right.cy,
+      0, 0, 1);
+
+  const Matrix3f K_left = CameraMatrix(intrinsics_left);
+  Matrix<float, 3, 4> A_left;
+  A_left << 1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0;
+  const Matrix<float, 3, 4> P_left = K_left * A_left;
+
+  const Matrix3f K_right = CameraMatrix(intrinsics_right);
+  Matrix<float, 3, 4> A_right;
+  A_right <<
+      0.999593617649873, 0.021411909431148, -0.018818333830411,
+          -0.131707087331978,
+      -0.021140534893290, 0.999671312094879, 0.014503294761121,
+          0.003232397463343,
+      0.019122691705565, -0.014099571235136, 0.999717722536176,
+          -0.001146108483477;
+  const Matrix<float, 3, 4> P_right = K_right * A_right;
+
+  projection_left = cv::Mat_<float>(3, 4);
+  projection_right = cv::Mat_<float>(3, 4);
+
+  EigenToOpenCV(P_left, &projection_left);
+  EigenToOpenCV(P_right, &projection_right);
+
   distortion_coeffs_left = (cv::Mat_<float>(5, 1) <<
       intrinsics_left.k1,
       intrinsics_left.k2,
       intrinsics_left.p1,
       intrinsics_left.p2,
       intrinsics_left.k3);
-  cv::Mat camera_rotation_right = (cv::Mat_<float>(3, 3) <<
-      0.999593617649873,
-      0.021411909431148,
-      -0.018818333830411,
-      -0.021140534893290,
-      0.999671312094879,
-      0.014503294761121,
-      0.019122691705565,
-      -0.014099571235136,
-      0.999717722536176
-  );
-  cv::Mat camera_translation_right = (cv::Mat_<float>(3, 1) << 
-      -0.131707087331978,
-      0.003232397463343,
-      -0.001146108483477
-  );
-  // Construct Left to Right affine transformation matrix.
-  cv::Mat camera_left_to_right_affine = cv::Mat::zeros(4, 4, CV_32F);
-  cv::Mat rot(camera_left_to_right_affine, cv::Rect(0, 0, 3, 3));
-  camera_rotation_right.copyTo(rot);
-  cv::Mat trans(camera_left_to_right_affine, cv::Rect(3, 0, 1, 3));
-  camera_translation_right.copyTo(trans);
-  camera_left_to_right_affine.at<int>(15) = 1.0;
-  // Turn the camera matrix into 3x4
-  cv::Mat three_by_four_cam = cv::Mat::zeros(3, 4, CV_32F);
-  cv::Mat cam_right(three_by_four_cam, cv::Rect(0, 0, 3, 3));
-  camera_matrix_right.copyTo(cam_right);
-  // Multiply to get the actual projection matrix (C * (R|T))
-  // homepages.inf.ed.ac.uk/rbf/CVonline/LOCAL_COPIES/EPSRC_SSAZ/node3.html
-  projection_right = three_by_four_cam * camera_left_to_right_affine;
+  if (false) {
+    std::cout << "\n\nprojection_left:\n";
+    std::cout << projection_left << "\n";
+    std::cout << "\n\nprojection_right:\n";
+    std::cout << projection_right<< "\n";
+    exit(0);
+  }
   // TODO: Later we should change how config works because this is done every
   // time a frame is created.
 }
