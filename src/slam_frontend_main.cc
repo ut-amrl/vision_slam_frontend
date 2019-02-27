@@ -138,25 +138,29 @@ void OdometryCallback(const nav_msgs::Odometry& msg,
 }
 
 void PublishVisualization(const SLAMProblem& problem,
-                          ros::Publisher* graph_publisher) {
-  static Marker nodes_marker;
-  static Marker odom_marker;
-  static Marker vision_marker;
-  static bool initialized = false;
-  if (!initialized) {
-    InitializeMarker(
-        Marker::POINTS, Color4f::kRed, 0.05, 0.1, 0, &nodes_marker);
-    InitializeMarker(
-        Marker::LINE_LIST, Color4f::kGreen, 0.02, 0, 0, &odom_marker);
-    InitializeMarker(
-        Marker::LINE_LIST, Color4f::kBlue, 0.01, 0, 0, &vision_marker);
-    initialized = true;
-  }
-  ClearMarker(&nodes_marker);
-  ClearMarker(&odom_marker);
-  ClearMarker(&vision_marker);
+                          ros::Publisher* graph_publisher,
+                          ros::Publisher* point_cloud_publisher) {
+  Marker nodes_marker;
+  Marker odom_marker;
+  Marker vision_marker;
+  Marker vision_points_marker;
+  InitializeMarker(
+      Marker::POINTS, Color4f::kRed, 0.05, 0.1, 0, &nodes_marker);
+  InitializeMarker(
+      Marker::LINE_LIST, Color4f::kGreen, 0.02, 0, 0, &odom_marker);
+  InitializeMarker(
+      Marker::LINE_LIST, Color4f::kBlue, 0.01, 0, 0, &vision_marker);
+  InitializeMarker(
+      Marker::POINTS, Color4f::kWhite, 0.05, 0.1, 0, &vision_points_marker);
+  nodes_marker.id = 0;
+  odom_marker.id = 1;
+  vision_marker.id = 2;
+  vision_points_marker.id = 3;
   for (const SLAMNode& node :  problem.nodes) {
     AddPoint(node.pose.loc, Color4f::kRed, &nodes_marker);
+    for (const slam_types::VisionFeature& f : node.features) {
+      AddPoint(f.location, Color4f(1, 1, 1, 0.5), &vision_points_marker);
+    }
   }
   for (const OdometryFactor& factor : problem.odometry_factors) {
     const Vector3f& loc1 = problem.nodes[factor.pose_i].pose.loc;
@@ -173,6 +177,7 @@ void PublishVisualization(const SLAMProblem& problem,
   markers.markers.push_back(odom_marker);
   markers.markers.push_back(vision_marker);
   graph_publisher->publish(markers);
+  point_cloud_publisher->publish(vision_points_marker);
 }
 
 void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
@@ -195,6 +200,8 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       "slam_frontend/pose_graph", 1);
   ros::Publisher image_publisher = n->advertise<sensor_msgs::Image>(
       "slam_frontend/debug_image", 1);
+  ros::Publisher point_cloud_publisher =
+      n->advertise<visualization_msgs::Marker>("slam_frontend/points", 1);
   double bag_t_start = -1;
   bool max_poses_processed = false;
   std::pair<sensor_msgs::CompressedImage, sensor_msgs::CompressedImage>
@@ -248,7 +255,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
     if (FLAGS_v > 0 && new_pose_added) {
       SLAMProblem problem;
       slam_frontend.GetSLAMProblem(&problem);
-      PublishVisualization(problem, &gui_publisher);
+      PublishVisualization(problem, &gui_publisher, &point_cloud_publisher);
       ros::spinOnce();
     }
   }
@@ -265,7 +272,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   }
   SLAMProblem problem;
   slam_frontend.GetSLAMProblem(&problem);
-  PublishVisualization(problem, &gui_publisher);
+  PublishVisualization(problem, &gui_publisher, &point_cloud_publisher);
   output_bag.write<vision_slam_frontend::SLAMProblem>(
       "slam_problem",
       ros::Time::now(),
