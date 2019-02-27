@@ -45,4 +45,4 @@ $(build_dir):
 	mkdir -p $(build_dir)
 
 cleanup_cache:
-rm -rf $(build_dir)
+	rm -rf $(build_dir)
