@@ -55,5 +55,4 @@ ROSBUILD_ADD_EXECUTABLE(bag_image_extract
 
 TARGET_LINK_LIBRARIES(bag_image_extract
                       ${OpenCV_LIBS}
-                      ${libs})
-
+${libs})
