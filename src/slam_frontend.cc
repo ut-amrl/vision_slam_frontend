@@ -98,6 +98,15 @@ void Frontend::Calculate3DLocations(
     }
   }
   cv::Mat triangulated_points;
+  if (true) {
+    printf("TODO: triangulatePoints requires a rectified stereo. See:\n\n"
+           "https://docs.opencv.org/2.4/modules/calib3d/doc/"
+           "camera_calibration_and_3d_reconstruction.html#stereocalibrate\n"
+           "and:\n"
+           "https://docs.opencv.org/2.4/modules/calib3d/doc/"
+           "camera_calibration_and_3d_reconstruction.html#triangulatepoints\n");
+    exit(0);
+  }
   cv::triangulatePoints(config_.projection_left,
                         config_.projection_right,
                         left_points,
