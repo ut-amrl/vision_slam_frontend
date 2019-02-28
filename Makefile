@@ -11,8 +11,8 @@ CXX_compiler=/usr/bin/clang++
 #CXX_compiler=/usr/bin/g++
 
 #acceptable build_types: Release/Debug/Profile
-build_type=Release
-# build_type=Debug
+#build_type=Release
+build_type=Debug
 
 ifeq ($(build_type),Debug)
 	override build_dir=build_debug

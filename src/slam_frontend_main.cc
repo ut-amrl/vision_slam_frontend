@@ -27,6 +27,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include <vector>
+#include <queue>
 
 #include "glog/logging.h"
 #include "opencv2/opencv.hpp"
@@ -86,7 +87,7 @@ DEFINE_int32(max_poses, 0, "Maximum number of SLAM poses to process");
 DECLARE_string(helpon);
 DECLARE_int32(v);
 
-cv::Mat DecodeImage(sensor_msgs::CompressedImage& msg) {
+cv::Mat DecodeImage(const sensor_msgs::CompressedImage& msg) {
   cv::Mat image = cv::imdecode(cv::InputArray(msg.data),
                                cv::ImreadModes::IMREAD_GRAYSCALE);
   if (msg.format.find("bayer_rggb8") != string::npos) {
@@ -99,7 +100,8 @@ cv::Mat DecodeImage(sensor_msgs::CompressedImage& msg) {
   return image;
 }
 
-bool CompressedImageCallback(std::pair<sensor_msgs::CompressedImage,
+bool CompressedImageCallback(const std::pair<
+                                       sensor_msgs::CompressedImage,
                                        sensor_msgs::CompressedImage>& img_pair,
                              Frontend* frontend) {
   double image_time = img_pair.first.header.stamp.toSec();
@@ -188,6 +190,15 @@ void PublishVisualization(const SLAMProblem& problem,
   point_cloud_publisher->publish(vision_points_marker);
 }
 
+// Comparator used to determine left and right frame pairs.
+class SeqCompare {
+ public:
+  bool operator()(sensor_msgs::CompressedImage a,
+                  sensor_msgs::CompressedImage b) {
+    return a.header.seq < b.header.seq;
+  }
+};
+
 void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   rosbag::Bag bag;
   cv_bridge::CvImage img_tranform;
@@ -206,8 +217,10 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   slam::Frontend slam_frontend("");
   ros::Publisher gui_publisher = n->advertise<visualization_msgs::MarkerArray>(
       "slam_frontend/pose_graph", 1);
-  ros::Publisher image_publisher = n->advertise<sensor_msgs::Image>(
+  ros::Publisher debug_image_publisher = n->advertise<sensor_msgs::Image>(
       "slam_frontend/debug_image", 1);
+  ros::Publisher debug_stereo_image_publisher =
+      n->advertise<sensor_msgs::Image>("slam_frontend/debug_stereo_image", 1);
   ros::Publisher point_cloud_publisher =
       n->advertise<visualization_msgs::Marker>("slam_frontend/points", 1);
   double bag_t_start = -1;
@@ -215,6 +228,12 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   std::pair<sensor_msgs::CompressedImage, sensor_msgs::CompressedImage>
       curr_stereo_image_pair;
   // Iterate for every message.
+  std::priority_queue<sensor_msgs::CompressedImage,
+                      std::vector<sensor_msgs::CompressedImage>,
+                      SeqCompare> left_queue;
+  std::priority_queue<sensor_msgs::CompressedImage,
+                      std::vector<sensor_msgs::CompressedImage>,
+                      SeqCompare> right_queue;
   for (rosbag::View::iterator it = view.begin();
        ros::ok() && it != view.end() && !max_poses_processed;
        ++it) {
@@ -228,14 +247,14 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
           message.instantiate<sensor_msgs::CompressedImage>();
       if (image_msg != NULL) {
         const bool is_left_camera =
-            message.getTopic() == FLAGS_left_image_topic;
+           message.getTopic() == FLAGS_left_image_topic;
+        new_pose_added = false;
         if (is_left_camera) {
           curr_stereo_image_pair.first = *image_msg;
-          new_pose_added = false;
         } else {
-          assert(curr_stereo_image_pair.first.header.seq
-              == image_msg->header.seq);
           curr_stereo_image_pair.second = *image_msg;
+          CHECK_EQ(curr_stereo_image_pair.first.header.stamp.toNSec(),
+                   curr_stereo_image_pair.second.header.stamp.toNSec());
           new_pose_added = CompressedImageCallback(curr_stereo_image_pair,
                                                    &slam_frontend);
         }
@@ -249,7 +268,10 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
           debug_image_header.stamp = ros::Time::now();
           img_tranform.image = slam_frontend.GetLastDebugImage();
           img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
-          image_publisher.publish(img_tranform.toImageMsg());
+          debug_image_publisher.publish(img_tranform.toImageMsg());
+          img_tranform.image = slam_frontend.GetLastDebugStereoImage();
+          img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
+          debug_stereo_image_publisher.publish(img_tranform.toImageMsg());
         }
       }
     }
@@ -293,17 +315,34 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
          static_cast<float>(problem.vision_factors.size()) /
          static_cast<float>((problem.nodes.size() - 1)));
   if (FLAGS_v > 0) {
-    std::vector<cv::Mat> debug_images = slam_frontend.getDebugImages();
-    uint64_t count = 0;
-    for (auto im : debug_images) {
-      std_msgs::Header h;
-      h.seq = count++;
-      h.stamp = ros::Time::now();
-      img_tranform.image = im;
-      img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
-      output_bag.write<sensor_msgs::Image>("slam_debug_images",
-                                            ros::Time::now(),
-                                            img_tranform.toImageMsg());
+    {
+      std::vector<cv::Mat> debug_images = slam_frontend.getDebugImages();
+      uint64_t count = 0;
+      for (auto im : debug_images) {
+        std_msgs::Header h;
+        h.seq = count++;
+        h.stamp = ros::Time::now();
+        img_tranform.image = im;
+        img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
+        output_bag.write<sensor_msgs::Image>("slam_debug_images",
+                                              ros::Time::now(),
+                                              img_tranform.toImageMsg());
+      }
+    }
+    {
+    std::vector<cv::Mat> debug_stereo_images =
+        slam_frontend.GetLastDebugStereoImage();
+      uint64_t count = 0;
+      for (auto im : debug_stereo_images) {
+        std_msgs::Header h;
+        h.seq = count++;
+        h.stamp = ros::Time::now();
+        img_tranform.image = im;
+        img_tranform.encoding = sensor_msgs::image_encodings::RGB8;
+        output_bag.write<sensor_msgs::Image>("slam_debug_stereo_images",
+                                              ros::Time::now(),
+                                              img_tranform.toImageMsg());
+      }
     }
   }
   output_bag.close();

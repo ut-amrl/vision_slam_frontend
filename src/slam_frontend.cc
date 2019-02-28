@@ -66,6 +66,47 @@ cv::Point_<T> EigenToOpenCV(const Eigen::Matrix<T, 2, 1>& p) {
 }  // namespace
 namespace slam {
 
+/* Debug Image Generators */
+cv::Mat CreateStereoDebugImage(const Frame& frame_left,
+                               const Frame& frame_right,
+                               const VisionFactor& matches) {
+  int left_cols = frame_left.debug_image_.cols;
+  cv::Mat return_image;
+  cv::hconcat(frame_left.debug_image_, frame_right.debug_image_, return_image);
+  // Convert debug image to RGB so we can draw other colors on it.
+  cv::cvtColor(return_image, return_image, CV_GRAY2BGR);
+  // Draw all the stereo matches on the final image.
+  for (FeatureMatch match : matches.feature_matches) {
+    cv::Point2f left_point = frame_left.keypoints_[match.id_current].pt;
+    cv::circle(return_image, left_point, 5, CV_RGB(255, 0, 0));
+    cv::Point2f right_point = frame_right.keypoints_[match.id_initial].pt;
+    right_point.x += left_cols;
+    cv::circle(return_image, right_point, 5, CV_RGB(255, 0, 0));
+    cv::line(return_image,
+             left_point,
+             right_point,
+             cv::Scalar(rand() % 255, rand() % 255, rand() % 255));
+  }
+  return return_image;
+}
+
+cv::Mat CreateMatchDebugImage(const Frame& frame_initial,
+                              const Frame& frame_current,
+                              const VisionFactor& corr) {
+  cv::Mat return_image = frame_current.debug_image_.clone();
+  cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
+  for (const slam_types::FeatureMatch c : corr.feature_matches) {
+    cv::circle(return_image,
+               frame_initial.keypoints_[c.id_initial].pt,
+               5, CV_RGB(255, 0, 0));
+    cv::line(return_image,
+             frame_initial.keypoints_[c.id_initial].pt,
+             frame_current.keypoints_[c.id_current].pt,
+             CV_RGB(0, 255, 0));
+  }
+  return return_image;
+}
+
 void Frontend::Calculate3DLocations(
                           Frame* left_frame,
                           Frame* right_frame,
@@ -98,15 +139,16 @@ void Frontend::Calculate3DLocations(
     }
   }
   cv::Mat triangulated_points;
-  if (true) {
-    printf("TODO: triangulatePoints requires a rectified stereo. See:\n\n"
-           "https://docs.opencv.org/2.4/modules/calib3d/doc/"
-           "camera_calibration_and_3d_reconstruction.html#stereocalibrate\n"
-           "and:\n"
-           "https://docs.opencv.org/2.4/modules/calib3d/doc/"
-           "camera_calibration_and_3d_reconstruction.html#triangulatepoints\n");
-    exit(0);
-  }
+// TODO(Jack): Stereo Rectification
+//   if (true) {
+//     printf("TODO: triangulatePoints requires a rectified stereo. See:\n\n"
+//            "https://docs.opencv.org/2.4/modules/calib3d/doc/"
+//            "camera_calibration_and_3d_reconstruction.html#stereocalibrate\n"
+//            "and:\n"
+//            "https://docs.opencv.org/2.4/modules/calib3d/doc/"
+//            "camera_calibration_and_3d_reconstruction.html#triangulatepoints\n");
+//     exit(0);
+//   }
   cv::triangulatePoints(config_.projection_left,
                         config_.projection_right,
                         left_points,
@@ -121,24 +163,12 @@ void Frontend::Calculate3DLocations(
                                col.ptr<float>()[2]);
     locations->push_back(vec);
   }
-}
-
-cv::Mat CreateDebugImage(const cv::Mat& image,
-                         const Frame& frame_initial,
-                         const Frame& frame_current,
-                         const VisionFactor& corr) {
-  cv::Mat return_image = image.clone();
-  cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
-  for (const slam_types::FeatureMatch c : corr.feature_matches) {
-    cv::circle(return_image,
-               frame_initial.keypoints_[c.id_initial].pt,
-               5, CV_RGB(255, 0, 0));
-    cv::line(return_image,
-             frame_initial.keypoints_[c.id_initial].pt,
-             frame_current.keypoints_[c.id_current].pt,
-             CV_RGB(0, 255, 0));
+  // Generate Debug Images if needed
+  if (config_.debug_images_) {
+    debug_stereo_images_.push_back(CreateStereoDebugImage(*left_frame,
+                                                          *right_frame,
+                                                          matches));
   }
-  return return_image;
 }
 
 bool Frontend::OdomCheck() {
@@ -263,8 +293,8 @@ void Frontend::GetFeatureMatches(Frame* past_frame_ptr,
     // Check if this is the first time we are seeing this match.
     // If it is not, then mark it where it was first seen.
     if (curr_frame.is_initial_[match.trainIdx]) {
-      curr_frame.is_initial_[match.trainIdx] = false;
-      curr_frame.initial_ids_[match.trainIdx] =
+        curr_frame.is_initial_[match.trainIdx] = false;
+        curr_frame.initial_ids_[match.trainIdx] =
           (past_frame.is_initial_[match.queryIdx])?
            past_frame.frame_ID_ :
            past_frame.initial_ids_[match.queryIdx];
@@ -324,6 +354,11 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
   Frame curr_frame, right_temp_frame;
   ExtractFeatures(left_image, &curr_frame);
   ExtractFeatures(right_image, &right_temp_frame);
+  // If we are running a debug version, attach image to frame.
+  if (config_.debug_images_) {
+    curr_frame.debug_image_ = left_image;
+    right_temp_frame.debug_image_ = right_image;
+  }
   // Keep track of the points that are original to this frame.
   for (Frame& past_frame : frame_list_) {
     VisionFactor matches;
@@ -367,7 +402,7 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
     const Frame initial_frame = frame_list_.back();
     assert(factor.pose_initial == initial_frame.frame_ID_);
     debug_images_.push_back(
-        CreateDebugImage(left_image, initial_frame, curr_frame, factor));
+        CreateMatchDebugImage(initial_frame, curr_frame, factor));
   }
   if (frame_list_.size() >= config_.frame_life_) {
     frame_list_.erase(frame_list_.begin());
@@ -385,6 +420,13 @@ cv::Mat Frontend::GetLastDebugImage() {
     return cv::Mat();
   }
   return debug_images_.back();
+}
+
+cv::Mat Frontend::GetLastDebugStereoImage() {
+  if (debug_stereo_images_.size() == 0) {
+    return cv::Mat();
+  }
+  return debug_stereo_images_.back();
 }
 
 
@@ -469,7 +511,7 @@ FrontendConfig::FrontendConfig() {
   intrinsics_left.k2 = 0.075666;
   intrinsics_left.p1 = -0.000227;
   intrinsics_left.p2 = -0.000320;
-  intrinsics_left.k3 = -0.000227; //TODO(Joydeep): Should this be 0?
+  intrinsics_left.k3 = -0.000227;  // TODO(Joydeep): Should this be 0?
 
   intrinsics_right.fx = 530.158021;
   intrinsics_right.cx = 475.540633;
@@ -528,7 +570,7 @@ FrontendConfig::FrontendConfig() {
     std::cout << projection_right<< "\n";
     exit(0);
   }
-  // TODO: Later we should change how config works because this is done every
+  // TODO(Jack): Later we should change how config works because this is done every
   // time a frame is created.
 }
 

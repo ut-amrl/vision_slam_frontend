@@ -89,7 +89,7 @@ struct FrontendConfig {
   // Camera intrinsics.
   CameraIntrinsics intrinsics_left, intrinsics_right;
   // Derived parameters, computed from intrinsics.
-  cv::Mat camera_matrix_left, camera_matrix_right, distortion_coeffs_left, 
+  cv::Mat camera_matrix_left, camera_matrix_right, distortion_coeffs_left,
       projection_left, projection_right;
 };
 
@@ -112,6 +112,7 @@ class Frame {
   FrontendConfig config_;
   std::unordered_map<uint64_t,
                      std::pair<uint64_t, uint64_t>> initial_appearances;
+  cv::Mat debug_image_;
 };
 
 /* The actual processing unit for the entire frontend */
@@ -130,6 +131,7 @@ class Frontend {
   std::vector<cv::Mat> getDebugImages();
   // Return the latest debug image.
   cv::Mat GetLastDebugImage();
+  cv::Mat GetLastDebugStereoImage();
 
   // Get a fully instantiated SLAM problem with the data collected so far.
   void GetSLAMProblem(slam_types::SLAMProblem* problem) const;
@@ -154,7 +156,7 @@ class Frontend {
   void AddOdometryFactor();
   // Removes radial distortion from all observed feature points.
   void UndistortFeaturePoints(std::vector<slam_types::VisionFeature>* features);
-  // Takes the stereo images of the same scene and uses the corresponding 
+  // Takes the stereo images of the same scene and uses the corresponding
   // matches to get the 3d point estimation.
   void Calculate3DLocations(Frame* left_frame,
                             Frame* right_frame,
@@ -188,6 +190,7 @@ class Frontend {
   std::vector<slam_types::OdometryFactor> odometry_factors_;
   // Debug
   std::vector<cv::Mat> debug_images_;
+  std::vector<cv::Mat> debug_stereo_images_;
 };
 }  // namespace slam
 
