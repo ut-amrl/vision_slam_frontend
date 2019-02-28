@@ -74,7 +74,7 @@ cv::Mat CreateStereoDebugImage(const Frame& frame_left,
   cv::Mat return_image;
   cv::hconcat(frame_left.debug_image_, frame_right.debug_image_, return_image);
   // Convert debug image to RGB so we can draw other colors on it.
-  cv::cvtColor(return_image, return_image, CV_GRAY2BGR);
+  cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2BGR);
   // Draw all the stereo matches on the final image.
   for (FeatureMatch match : matches.feature_matches) {
     cv::Point2f left_point = frame_left.keypoints_[match.id_current].pt;
