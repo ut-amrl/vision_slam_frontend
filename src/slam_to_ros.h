@@ -44,12 +44,12 @@ FeatureMatchToRos(const slam_types::FeatureMatch& pair) {
 static vision_slam_frontend::VisionFeature
 VisionFeatureToRos(const slam_types::VisionFeature& feature) {
   vision_slam_frontend::VisionFeature ros_feature;
-  ros_feature.pixel.x = feature.pixel[0];
-  ros_feature.pixel.y = feature.pixel[1];
+  ros_feature.pixel.x = feature.pixel.x();
+  ros_feature.pixel.y = feature.pixel.y();
   ros_feature.pixel.z = 0;
-  ros_feature.location.x = feature.location[0];
-  ros_feature.location.y = feature.location[1];
-  ros_feature.location.z = feature.location[2];
+  ros_feature.location.x = feature.point3d.x();
+  ros_feature.location.y = feature.point3d.y();
+  ros_feature.location.z = feature.point3d.z();
   ros_feature.id = feature.id;
   return ros_feature;
 }

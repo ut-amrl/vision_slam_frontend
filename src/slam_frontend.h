@@ -141,6 +141,9 @@ class Frontend {
     return nodes_.size();
   }
 
+  // Get the left camera intrinsics.
+  CameraIntrinsics LeftCameraIntrinsics() { return config_.intrinsics_left; }
+
  private:
   // Returns true iff odometry reports that the robot has moved sufficiently to
   // warrant a vision update.
@@ -157,10 +160,10 @@ class Frontend {
   // Removes radial distortion from all observed feature points.
   void UndistortFeaturePoints(std::vector<slam_types::VisionFeature>* features);
   // Takes the stereo images of the same scene and uses the corresponding
-  // matches to get the 3d point estimation.
-  void Calculate3DLocations(Frame* left_frame,
-                            Frame* right_frame,
-                            std::vector<Eigen::Vector3f>* locations);
+  // matches to get the depth estimate of the 3D point.
+  void Calculate3DPoints(Frame* left_frame,
+                         Frame* right_frame,
+                         std::vector<Eigen::Vector3f>* points);
   // Indicates if odometry has been initialized or not.
   bool odom_initialized_;
   // Initial odometry translation.

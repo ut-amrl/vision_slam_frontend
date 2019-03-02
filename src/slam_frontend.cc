@@ -107,10 +107,9 @@ cv::Mat CreateMatchDebugImage(const Frame& frame_initial,
   return return_image;
 }
 
-void Frontend::Calculate3DLocations(
-                          Frame* left_frame,
-                          Frame* right_frame,
-                          std::vector<Eigen::Vector3f>* locations) {
+void Frontend::Calculate3DPoints(Frame* left_frame,
+                                 Frame* right_frame,
+                                 vector<Vector3f>* points) {
   // Convert keypoints into array of points.
   std::vector<cv::Point2f> left_points;
   std::vector<cv::Point2f> right_points;
@@ -121,7 +120,7 @@ void Frontend::Calculate3DLocations(
   VisionFactor matches;
   // Assure that every point has a match.
   float best_percent = config_.best_percent_;
-  config_.best_percent_ = 1.0;
+  config_.best_percent_ = 0.8;
   GetFeatureMatches(right_frame, left_frame, &matches);
   config_.best_percent_ = best_percent;
   for (FeatureMatch match : matches.feature_matches) {
@@ -139,16 +138,6 @@ void Frontend::Calculate3DLocations(
     }
   }
   cv::Mat triangulated_points;
-// TODO(Jack): Stereo Rectification
-//   if (true) {
-//     printf("TODO: triangulatePoints requires a rectified stereo. See:\n\n"
-//            "https://docs.opencv.org/2.4/modules/calib3d/doc/"
-//            "camera_calibration_and_3d_reconstruction.html#stereocalibrate\n"
-//            "and:\n"
-//            "https://docs.opencv.org/2.4/modules/calib3d/doc/"
-//            "camera_calibration_and_3d_reconstruction.html#triangulatepoints\n");
-//     exit(0);
-//   }
   cv::triangulatePoints(config_.projection_left,
                         config_.projection_right,
                         left_points,
@@ -157,11 +146,11 @@ void Frontend::Calculate3DLocations(
   // Make sure all keypoints are matched to something.
   CHECK_EQ(triangulated_points.cols, matches.feature_matches.size());
   for (int64_t c = 0; c < triangulated_points.cols; ++c) {
-    auto col = triangulated_points.col(c);
-    auto vec = Eigen::Vector3f(col.ptr<float>()[0],
-                               col.ptr<float>()[1],
-                               col.ptr<float>()[2]);
-    locations->push_back(vec);
+    cv::Mat col = triangulated_points.col(c);
+    points->push_back(
+      Vector3f(col.at<float>(0, 0),
+               col.at<float>(1, 0),
+               col.at<float>(2, 0)) /col.at<float>(3, 0));
   }
   // Generate Debug Images if needed
   if (config_.debug_images_) {
@@ -370,15 +359,13 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
     // }
     vision_factors_.push_back(matches);
   }
-  // Calculate the real 3D point locations.
-  std::vector<Eigen::Vector3f> locations;
-  Calculate3DLocations(&curr_frame,
-                       &right_temp_frame,
-                       &locations);
+  // Calculate the depths of the points.
+  vector<Vector3f> points;
+  Calculate3DPoints(&curr_frame, &right_temp_frame, &points);
   vector<VisionFeature> features;
   for (uint64_t i = 0; i < curr_frame.keypoints_.size(); i++) {
     features.push_back(VisionFeature(
-        i, OpenCVToEigen(curr_frame.keypoints_[i].pt), locations[i]));
+        i, OpenCVToEigen(curr_frame.keypoints_[i].pt), points[i]));
   }
   UndistortFeaturePoints(&features);
   const Vector3f loc =  init_odom_rotation_.inverse() *
@@ -483,7 +470,8 @@ void EigenToOpenCV(const Matrix<float, 3, 4>& m1,
   cv::Mat& m2 = *m2_ptr;
   for (int r = 0; r < 3; ++r) {
     for (int c = 0; c < 4; ++c) {
-      m2.ptr<float>(r)[c] = m1(r, c);
+      m2.at<float>(r, c) = m1(r, c);
+      CHECK_EQ(m2.at<float>(r, c), m1(r, c));
     }
   }
 }
@@ -551,8 +539,8 @@ FrontendConfig::FrontendConfig() {
           -0.001146108483477;
   const Matrix<float, 3, 4> P_right = K_right * A_right;
 
-  projection_left = cv::Mat_<float>(3, 4);
-  projection_right = cv::Mat_<float>(3, 4);
+  projection_left = cv::Mat(3, 4, CV_32F);
+  projection_right = cv::Mat(3, 4, CV_32F);
 
   EigenToOpenCV(P_left, &projection_left);
   EigenToOpenCV(P_right, &projection_right);

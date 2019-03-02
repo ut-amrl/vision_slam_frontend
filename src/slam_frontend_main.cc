@@ -66,8 +66,11 @@ using slam_types::FeatureMatch;
 using slam_types::VisionFeature;
 using std::string;
 using std::vector;
+using Eigen::Affine3f;
 using Eigen::Quaternionf;
+using Eigen::Translation3f;
 using Eigen::Vector3f;
+using Eigen::Matrix3f;
 using visualization_msgs::Marker;
 using visualization_msgs::MarkerArray;
 
@@ -144,7 +147,8 @@ bool IsFinite(const Vector3f& p) {
   return isfinite(p.x()) && isfinite(p.y()) && isfinite(p.z());
 }
 
-void PublishVisualization(const SLAMProblem& problem,
+void PublishVisualization(const slam::CameraIntrinsics& intrinsics,
+                          const SLAMProblem& problem,
                           ros::Publisher* graph_publisher,
                           ros::Publisher* point_cloud_publisher) {
   Marker nodes_marker;
@@ -163,12 +167,23 @@ void PublishVisualization(const SLAMProblem& problem,
   odom_marker.id = 1;
   vision_marker.id = 2;
   vision_points_marker.id = 3;
+  Matrix3f kinv;
+  kinv << intrinsics.fx, 0, intrinsics.cx,
+       0, intrinsics.fy, intrinsics.cy,
+       0, 0, 1;
+  kinv = kinv.inverse();
   for (const SLAMNode& node :  problem.nodes) {
     AddPoint(node.pose.loc, Color4f::kRed, &nodes_marker);
+    if (node.id != problem.nodes.back().id) continue;
     // TODO(joydeepb): Need to transform points to world coordinates!
     for (const slam_types::VisionFeature& f : node.features) {
-      if (IsFinite(f.location) && f.location.norm() < 20.0) {
-        AddPoint(f.location, Color4f(1, 1, 1, 0.2), &vision_points_marker);
+      if (IsFinite(f.point3d) &&
+          f.point3d.z() > 0.0 &&
+          f.point3d.norm() > 0.25 &&
+          f.point3d.norm() < 10.0) {
+        AddPoint(f.point3d,
+                 Color4f(1, 1, 1, 0.2),
+                 &vision_points_marker);
       }
     }
   }
@@ -285,7 +300,10 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
     if (FLAGS_v > 0 && new_pose_added) {
       SLAMProblem problem;
       slam_frontend.GetSLAMProblem(&problem);
-      PublishVisualization(problem, &gui_publisher, &point_cloud_publisher);
+      PublishVisualization(slam_frontend.LeftCameraIntrinsics(),
+                           problem,
+                           &gui_publisher,
+                           &point_cloud_publisher);
       ros::spinOnce();
     }
   }
@@ -302,7 +320,10 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   }
   SLAMProblem problem;
   slam_frontend.GetSLAMProblem(&problem);
-  PublishVisualization(problem, &gui_publisher, &point_cloud_publisher);
+  PublishVisualization(slam_frontend.LeftCameraIntrinsics(),
+                       problem,
+                       &gui_publisher,
+                       &point_cloud_publisher);
   output_bag.write<vision_slam_frontend::SLAMProblem>(
       "slam_problem",
       ros::Time::now(),
