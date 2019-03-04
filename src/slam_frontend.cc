@@ -122,7 +122,7 @@ void Frontend::Calculate3DPoints(Frame* left_frame,
   VisionFactor matches;
   // Assure that every point has a match.
   float best_percent = config_.best_percent_;
-  config_.best_percent_ = 0.8;
+  config_.best_percent_ = 1.0;
   GetFeatureMatches(right_frame, left_frame, &matches);
   config_.best_percent_ = best_percent;
   for (FeatureMatch match : matches.feature_matches) {

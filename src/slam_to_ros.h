@@ -47,10 +47,13 @@ VisionFeatureToRos(const slam_types::VisionFeature& feature) {
   ros_feature.pixel.x = feature.pixel.x();
   ros_feature.pixel.y = feature.pixel.y();
   ros_feature.pixel.z = 0;
-  ros_feature.location.x = feature.point3d.x();
-  ros_feature.location.y = feature.point3d.y();
-  ros_feature.location.z = feature.point3d.z();
+  ros_feature.point3d.x = feature.point3d.x();
+  ros_feature.point3d.y = feature.point3d.y();
+  ros_feature.point3d.z = feature.point3d.z();
   ros_feature.id = feature.id;
+//   CHECK(std::isfinite(ros_feature.point3d.x));
+//   CHECK(std::isfinite(ros_feature.point3d.y));
+//   CHECK(std::isfinite(ros_feature.point3d.z));
   return ros_feature;
 }
 
