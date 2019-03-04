@@ -86,6 +86,7 @@ DEFINE_string(odom_topic,
 DEFINE_string(input, "", "Name of ROS bag file to load");
 DEFINE_string(output, "", "Name of ROS bag file to output");
 DEFINE_bool(visualize, false, "Display images loaded");
+DEFINE_bool(save_debug, false, "Save debug images");
 DEFINE_int32(max_poses, 0, "Maximum number of SLAM poses to process");
 DECLARE_string(helpon);
 DECLARE_int32(v);
@@ -147,7 +148,7 @@ bool IsFinite(const Vector3f& p) {
   return isfinite(p.x()) && isfinite(p.y()) && isfinite(p.z());
 }
 
-void PublishVisualization(const slam::CameraIntrinsics& intrinsics,
+void PublishVisualization(const slam::FrontendConfig& config,
                           const SLAMProblem& problem,
                           ros::Publisher* graph_publisher,
                           ros::Publisher* point_cloud_publisher) {
@@ -162,26 +163,25 @@ void PublishVisualization(const slam::CameraIntrinsics& intrinsics,
   InitializeMarker(
       Marker::LINE_LIST, Color4f::kBlue, 0.01, 0, 0, &vision_marker);
   InitializeMarker(
-      Marker::POINTS, Color4f::kWhite, 0.05, 0.1, 0, &vision_points_marker);
+      Marker::POINTS, Color4f::kWhite, 0.01, 0.6, 0, &vision_points_marker);
   nodes_marker.id = 0;
   odom_marker.id = 1;
   vision_marker.id = 2;
   vision_points_marker.id = 3;
-  Matrix3f kinv;
-  kinv << intrinsics.fx, 0, intrinsics.cx,
-       0, intrinsics.fy, intrinsics.cy,
-       0, 0, 1;
-  kinv = kinv.inverse();
+
+  const Affine3f cam_to_robot = config.left_cam_to_robot;
+
   for (const SLAMNode& node :  problem.nodes) {
     AddPoint(node.pose.loc, Color4f::kRed, &nodes_marker);
-    if (node.id != problem.nodes.back().id) continue;
+    // if (node.id != problem.nodes.back().id) continue;
     // TODO(joydeepb): Need to transform points to world coordinates!
+    const Affine3f robot_to_world = node.pose.RobotToWorldTf();
     for (const slam_types::VisionFeature& f : node.features) {
       if (IsFinite(f.point3d) &&
           f.point3d.z() > 0.0 &&
           f.point3d.norm() > 0.25 &&
           f.point3d.norm() < 10.0) {
-        AddPoint(f.point3d,
+        AddPoint(robot_to_world * cam_to_robot * f.point3d,
                  Color4f(1, 1, 1, 0.2),
                  &vision_points_marker);
       }
@@ -297,10 +297,10 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
         OdometryCallback(*odom_msg, &slam_frontend);
       }
     }
-    if (FLAGS_v > 0 && new_pose_added) {
+    if (new_pose_added) {
       SLAMProblem problem;
       slam_frontend.GetSLAMProblem(&problem);
-      PublishVisualization(slam_frontend.LeftCameraIntrinsics(),
+      PublishVisualization(slam_frontend.GetConfig(),
                            problem,
                            &gui_publisher,
                            &point_cloud_publisher);
@@ -320,10 +320,6 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   }
   SLAMProblem problem;
   slam_frontend.GetSLAMProblem(&problem);
-  PublishVisualization(slam_frontend.LeftCameraIntrinsics(),
-                       problem,
-                       &gui_publisher,
-                       &point_cloud_publisher);
   output_bag.write<vision_slam_frontend::SLAMProblem>(
       "slam_problem",
       ros::Time::now(),
@@ -335,7 +331,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
          static_cast<int>(problem.vision_factors.size()),
          static_cast<float>(problem.vision_factors.size()) /
          static_cast<float>((problem.nodes.size() - 1)));
-  if (FLAGS_v > 0) {
+  if (FLAGS_save_debug) {
     {
       std::vector<cv::Mat> debug_images = slam_frontend.getDebugImages();
       uint64_t count = 0;
@@ -351,10 +347,11 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
       }
     }
     {
-    std::vector<cv::Mat> debug_stereo_images =
-        slam_frontend.GetLastDebugStereoImage();
+      std::vector<cv::Mat> debug_stereo_images =
+          slam_frontend.getDebugStereoImages();
       uint64_t count = 0;
       for (auto im : debug_stereo_images) {
+        printf("%d\n", im.flags);
         std_msgs::Header h;
         h.seq = count++;
         h.stamp = ros::Time::now();

@@ -42,6 +42,8 @@ using slam_types::OdometryFactor;
 using slam_types::VisionFactor;
 using slam_types::FeatureMatch;
 using slam_types::VisionFeature;
+using std::cout;
+using std::endl;
 using std::string;
 using std::vector;
 using Eigen::Quaternionf;
@@ -402,6 +404,11 @@ vector<cv::Mat> Frontend::getDebugImages() {
   return debug_images_;
 }
 
+vector<cv::Mat> Frontend::getDebugStereoImages() {
+  return debug_stereo_images_;
+}
+
+
 cv::Mat Frontend::GetLastDebugImage() {
   if (debug_images_.size() == 0) {
     return cv::Mat();
@@ -478,10 +485,10 @@ void EigenToOpenCV(const Matrix<float, 3, 4>& m1,
 
 FrontendConfig::FrontendConfig() {
   // Load Default values
-  debug_images_ = FLAGS_v > 0;
+  debug_images_ = true;
   descriptor_extract_type_ = FrontendConfig::DescriptorExtractorType::AKAZE;
   best_percent_ = 0.3f;
-  nn_match_ratio_ = 0.8f;
+  nn_match_ratio_ = 0.6f;
   frame_life_ = 10;
   min_odom_rotation = 10.0 / 180.0 * M_PI;
   min_odom_translation = 0.2;
@@ -538,6 +545,13 @@ FrontendConfig::FrontendConfig() {
       0.019122691705565, -0.014099571235136, 0.999717722536176,
           -0.001146108483477;
   const Matrix<float, 3, 4> P_right = K_right * A_right;
+
+  const Vector3f XT(-0.01, 0.06, 0.5299999713897705);
+  Matrix3f RT;
+  RT << 0.009916590468,  -0.2835522866,   0.9589055021,
+        -0.9998698619, -0.01501486552, 0.005900269087,
+        0.01272480238,  -0.9588392225,  -0.2836642819;
+  left_cam_to_robot = Eigen::Translation3f(XT) * RT;
 
   projection_left = cv::Mat(3, 4, CV_32F);
   projection_right = cv::Mat(3, 4, CV_32F);

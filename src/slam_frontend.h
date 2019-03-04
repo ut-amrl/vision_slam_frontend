@@ -91,6 +91,9 @@ struct FrontendConfig {
   // Derived parameters, computed from intrinsics.
   cv::Mat camera_matrix_left, camera_matrix_right, distortion_coeffs_left,
       projection_left, projection_right;
+
+  // Affine transforms from frame of camera to robot.
+  Eigen::Affine3f left_cam_to_robot;
 };
 
 /* A container for slam node data */
@@ -132,6 +135,7 @@ class Frontend {
   // Return the latest debug image.
   cv::Mat GetLastDebugImage();
   cv::Mat GetLastDebugStereoImage();
+  std::vector<cv::Mat> getDebugStereoImages();
 
   // Get a fully instantiated SLAM problem with the data collected so far.
   void GetSLAMProblem(slam_types::SLAMProblem* problem) const;
@@ -141,8 +145,8 @@ class Frontend {
     return nodes_.size();
   }
 
-  // Get the left camera intrinsics.
-  CameraIntrinsics LeftCameraIntrinsics() { return config_.intrinsics_left; }
+  // Get the frontend configuration parameters.
+  FrontendConfig GetConfig() { return config_; }
 
  private:
   // Returns true iff odometry reports that the robot has moved sufficiently to
@@ -164,6 +168,7 @@ class Frontend {
   void Calculate3DPoints(Frame* left_frame,
                          Frame* right_frame,
                          std::vector<Eigen::Vector3f>* points);
+
   // Indicates if odometry has been initialized or not.
   bool odom_initialized_;
   // Initial odometry translation.
@@ -191,6 +196,7 @@ class Frontend {
   std::vector<slam_types::VisionFactor> vision_factors_;
   std::vector<slam_types::SLAMNode> nodes_;
   std::vector<slam_types::OdometryFactor> odometry_factors_;
+
   // Debug
   std::vector<cv::Mat> debug_images_;
   std::vector<cv::Mat> debug_stereo_images_;
