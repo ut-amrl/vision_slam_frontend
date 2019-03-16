@@ -198,7 +198,7 @@ void PublishVisualization(const slam::FrontendConfig& config,
   InitializeMarker(
       Marker::LINE_LIST, Color4f::kBlue, 0.01, 0, 0, &vision_marker);
   InitializeMarker(
-      Marker::POINTS, Color4f::kWhite, 0.01, 0.6, 0, &vision_points_marker);
+      Marker::POINTS, Color4f::kWhite, 0.02, 0.6, 0, &vision_points_marker);
   nodes_marker.id = 0;
   odom_marker.id = 1;
   vision_marker.id = 2;
