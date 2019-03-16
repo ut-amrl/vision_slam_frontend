@@ -36,8 +36,8 @@
 static vision_slam_frontend::FeatureMatch
 FeatureMatchToRos(const slam_types::FeatureMatch& pair) {
   vision_slam_frontend::FeatureMatch ros_pair;
-  ros_pair.id_current = pair.id_current;
-  ros_pair.id_initial = pair.id_initial;
+  ros_pair.id_current = pair.feature_idx_current;
+  ros_pair.id_initial = pair.feature_idx_initial;
   return ros_pair;
 }
 
@@ -50,7 +50,7 @@ VisionFeatureToRos(const slam_types::VisionFeature& feature) {
   ros_feature.point3d.x = feature.point3d.x();
   ros_feature.point3d.y = feature.point3d.y();
   ros_feature.point3d.z = feature.point3d.z();
-  ros_feature.id = feature.id;
+  ros_feature.id = feature.feature_idx;
 //   CHECK(std::isfinite(ros_feature.point3d.x));
 //   CHECK(std::isfinite(ros_feature.point3d.y));
 //   CHECK(std::isfinite(ros_feature.point3d.z));
@@ -73,7 +73,7 @@ RobotPoseToRos(const slam_types::RobotPose& rp) {
 static vision_slam_frontend::SLAMNode
 SLAMNodeToRos(const slam_types::SLAMNode& node) {
   vision_slam_frontend::SLAMNode ros_node;
-  ros_node.id = node.id;
+  ros_node.id = node.node_idx;
   ros_node.timestamp = node.timestamp;
   ros_node.pose = RobotPoseToRos(node.pose);
   for (auto p : node.features) {
@@ -85,8 +85,8 @@ SLAMNodeToRos(const slam_types::SLAMNode& node) {
 static vision_slam_frontend::VisionFactor
 VisionFactorToRos(const slam_types::VisionFactor& corr) {
   vision_slam_frontend::VisionFactor ros_corr;
-  ros_corr.pose_current = corr.pose_current;
-  ros_corr.pose_initial = corr.pose_initial;
+  ros_corr.pose_current = corr.pose_idx_current;
+  ros_corr.pose_initial = corr.pose_idx_initial;
   for (auto m : corr.feature_matches) {
     ros_corr.feature_matches.push_back(FeatureMatchToRos(m));
   }

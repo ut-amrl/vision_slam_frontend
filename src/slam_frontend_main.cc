@@ -148,6 +148,41 @@ bool IsFinite(const Vector3f& p) {
   return isfinite(p.x()) && isfinite(p.y()) && isfinite(p.z());
 }
 
+void AddFeaturePoints(const slam::FrontendConfig& config,
+                      const SLAMProblem& problem,
+                      Marker* marker_ptr) {
+  const Affine3f cam_to_robot = config.left_cam_to_robot;
+  for (const SLAMNode& node :  problem.nodes) {
+    const Affine3f robot_to_world = node.pose.RobotToWorldTf();
+    for (const slam_types::VisionFeature& f : node.features) {
+      if (IsFinite(f.point3d)) {
+        AddPoint(robot_to_world * cam_to_robot * f.point3d,
+                 Color4f(1, 1, 1, 0.2),
+                 marker_ptr);
+      }
+    }
+  }
+}
+
+void AddPoseGraph(const SLAMProblem& problem,
+                  Marker* nodes_marker,
+                  Marker* vision_marker,
+                  Marker* odom_marker) {
+  for (const SLAMNode& node :  problem.nodes) {
+    AddPoint(node.pose.loc, Color4f::kRed, nodes_marker);
+  }
+  for (const OdometryFactor& factor : problem.odometry_factors) {
+    const Vector3f& loc1 = problem.nodes[factor.pose_i].pose.loc;
+    const Vector3f& loc2 = problem.nodes[factor.pose_j].pose.loc;
+    AddLine(loc1, loc2, Color4f::kGreen, odom_marker);
+  }
+  for (const VisionFactor& factor : problem.vision_factors) {
+    const Vector3f& loc1 = problem.nodes[factor.pose_idx_initial].pose.loc;
+    const Vector3f& loc2 = problem.nodes[factor.pose_idx_current].pose.loc;
+    AddLine(loc1, loc2, Color4f::kBlue, vision_marker);
+  }
+}
+
 void PublishVisualization(const slam::FrontendConfig& config,
                           const SLAMProblem& problem,
                           ros::Publisher* graph_publisher,
@@ -169,34 +204,9 @@ void PublishVisualization(const slam::FrontendConfig& config,
   vision_marker.id = 2;
   vision_points_marker.id = 3;
 
-  const Affine3f cam_to_robot = config.left_cam_to_robot;
+  AddFeaturePoints(config, problem, &vision_points_marker);
+  AddPoseGraph(problem, &nodes_marker, &vision_marker, &odom_marker);
 
-  for (const SLAMNode& node :  problem.nodes) {
-    AddPoint(node.pose.loc, Color4f::kRed, &nodes_marker);
-    // if (node.id != problem.nodes.back().id) continue;
-    // TODO(joydeepb): Need to transform points to world coordinates!
-    const Affine3f robot_to_world = node.pose.RobotToWorldTf();
-    for (const slam_types::VisionFeature& f : node.features) {
-      if (IsFinite(f.point3d) &&
-          f.point3d.z() > 0.0 &&
-          f.point3d.norm() > 0.25 &&
-          f.point3d.norm() < 10.0) {
-        AddPoint(robot_to_world * cam_to_robot * f.point3d,
-                 Color4f(1, 1, 1, 0.2),
-                 &vision_points_marker);
-      }
-    }
-  }
-  for (const OdometryFactor& factor : problem.odometry_factors) {
-    const Vector3f& loc1 = problem.nodes[factor.pose_i].pose.loc;
-    const Vector3f& loc2 = problem.nodes[factor.pose_j].pose.loc;
-    AddLine(loc1, loc2, Color4f::kGreen, &odom_marker);
-  }
-  for (const VisionFactor& factor : problem.vision_factors) {
-    const Vector3f& loc1 = problem.nodes[factor.pose_initial].pose.loc;
-    const Vector3f& loc2 = problem.nodes[factor.pose_current].pose.loc;
-    AddLine(loc1, loc2, Color4f::kBlue, &vision_marker);
-  }
   MarkerArray markers;
   markers.markers.push_back(nodes_marker);
   markers.markers.push_back(odom_marker);

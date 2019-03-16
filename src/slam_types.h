@@ -32,40 +32,41 @@
 namespace slam_types {
 
 struct VisionFeature {
-  // ID of feature, unique to node.
-  uint64_t id;
+  // Index of this feature in the features vector for the node, stored here
+  // for redundancy.
+  uint64_t feature_idx;
   // Camera pixel location of feature.
   Eigen::Vector2f pixel;
-  // Calculated 3d location
+  // Estimated 3d location in the camera frame.
   Eigen::Vector3f point3d;
   // Default constructor: do nothing.
   VisionFeature() {}
   // Convenience constructor: initialize everything.
-  VisionFeature(uint64_t id,
+  VisionFeature(uint64_t idx,
                 const Eigen::Vector2f& p,
                 const Eigen::Vector3f& point3d) :
-      id(id), pixel(p), point3d(point3d) {}
+      feature_idx(idx), pixel(p), point3d(point3d) {}
 };
 
 struct FeatureMatch {
   // Feature ID from the initial pose.
-  uint64_t id_initial;
+  uint64_t feature_idx_initial;
   // Feature ID from current pose.
-  uint64_t id_current;
+  uint64_t feature_idx_current;
   // Default constructor: do nothing.
   FeatureMatch() {}
   // Convenience constructor: initialize everything.
-  FeatureMatch(uint64_t id_initial,
-               uint64_t id_current) :
-    id_initial(id_initial),
-    id_current(id_current) {}
+  FeatureMatch(uint64_t fid_initial,
+               uint64_t fid_current) :
+    feature_idx_initial(fid_initial),
+    feature_idx_current(fid_current) {}
 };
 
 struct VisionFactor {
   // ID of the pose where the features were *first* observed.
-  uint64_t pose_initial;
+  uint64_t pose_idx_initial;
   // ID of second pose.
-  uint64_t pose_current;
+  uint64_t pose_idx_current;
   // Pair of feature ID from first pose, and feature ID from second pose,
   // and feature ID from initial pose.
   std::vector<FeatureMatch> feature_matches;
@@ -76,7 +77,7 @@ struct VisionFactor {
       uint64_t pose_initial,
       uint64_t pose_current,
       const std::vector<slam_types::FeatureMatch>& feature_matches) :
-      pose_initial(pose_initial), pose_current(pose_current),
+      pose_idx_initial(pose_initial), pose_idx_current(pose_current),
       feature_matches(feature_matches) {}
 };
 
@@ -123,8 +124,8 @@ struct OdometryFactor {
 };
 
 struct SLAMNode {
-  // Pose ID.
-  uint64_t id;
+  // Pose index for this node in the nodes vector for the slam problem.
+  uint64_t node_idx;
   // Timestamp.
   double timestamp;
   // 6DOF parameters.
@@ -134,11 +135,11 @@ struct SLAMNode {
   // Default constructor: do nothing.
   SLAMNode() {}
   // Convenience constructor, initialize all components.
-  SLAMNode(uint64_t id,
+  SLAMNode(uint64_t idx,
            double timestamp,
            const RobotPose& pose,
            const std::vector<VisionFeature>& features) :
-      id(id), timestamp(timestamp), pose(pose), features(features) {}
+      node_idx(idx), timestamp(timestamp), pose(pose), features(features) {}
 };
 
 struct SLAMProblem {
@@ -158,6 +159,38 @@ struct SLAMProblem {
       vision_factors(vision_factors),
       odometry_factors(odometry_factors) {}
 };
+
+
+struct SLAMNodeSolution {
+  // Pose ID.
+  uint64_t node_idx;
+  // Timestamp.
+  double timestamp;
+  // 6DOF parameters: tx, ty, tx, angle_x, angle_y, angle_z. Note that
+  // angle_* are the coordinates in scaled angle-axis form.
+  double pose[6];
+  // Observed vision feature inverse depths.
+  std::vector<double> inverse_depths;
+  // Corresponding flag of whether the point is to be part of the map.
+  std::vector<bool> point_in_map;
+  // Convenience constructor, initialize all values.
+  explicit SLAMNodeSolution(const SLAMNode& n) :
+      node_idx(n.node_idx),
+      timestamp(n.timestamp),
+      pose{0, 0, 0, 0, 0, 0},
+      inverse_depths(n.features.size(), 1.0),
+      point_in_map(n.features.size(), false) {
+    const Eigen::AngleAxisf rotation(n.pose.angle);
+    const Eigen::Vector3f rotation_aa = rotation.angle() * rotation.axis();
+    pose[0] = n.pose.loc.x();
+    pose[1] = n.pose.loc.y();
+    pose[2] = n.pose.loc.z();
+    pose[3] = rotation_aa.x();
+    pose[4] = rotation_aa.y();
+    pose[5] = rotation_aa.z()+0.02;
+  }
+};
+
 
 }  // namespace slam_types
 

@@ -79,9 +79,11 @@ cv::Mat CreateStereoDebugImage(const Frame& frame_left,
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2BGR);
   // Draw all the stereo matches on the final image.
   for (FeatureMatch match : matches.feature_matches) {
-    cv::Point2f left_point = frame_left.keypoints_[match.id_current].pt;
+    cv::Point2f left_point =
+        frame_left.keypoints_[match.feature_idx_current].pt;
     cv::circle(return_image, left_point, 5, CV_RGB(255, 0, 0));
-    cv::Point2f right_point = frame_right.keypoints_[match.id_initial].pt;
+    cv::Point2f right_point =
+        frame_right.keypoints_[match.feature_idx_initial].pt;
     right_point.x += left_cols;
     cv::circle(return_image, right_point, 5, CV_RGB(255, 0, 0));
     cv::line(return_image,
@@ -99,11 +101,11 @@ cv::Mat CreateMatchDebugImage(const Frame& frame_initial,
   cv::cvtColor(return_image, return_image, cv::COLOR_GRAY2RGB);
   for (const slam_types::FeatureMatch c : corr.feature_matches) {
     cv::circle(return_image,
-               frame_initial.keypoints_[c.id_initial].pt,
+               frame_initial.keypoints_[c.feature_idx_initial].pt,
                5, CV_RGB(255, 0, 0));
     cv::line(return_image,
-             frame_initial.keypoints_[c.id_initial].pt,
-             frame_current.keypoints_[c.id_current].pt,
+             frame_initial.keypoints_[c.feature_idx_initial].pt,
+             frame_current.keypoints_[c.feature_idx_current].pt,
              CV_RGB(0, 255, 0));
   }
   return return_image;
@@ -126,8 +128,9 @@ void Frontend::Calculate3DPoints(Frame* left_frame,
   GetFeatureMatches(right_frame, left_frame, &matches);
   config_.best_percent_ = best_percent;
   for (FeatureMatch match : matches.feature_matches) {
-    const auto& left_pt = left_frame->keypoints_[match.id_current].pt;
-    const auto& right_pt = right_frame->keypoints_[match.id_initial].pt;
+    const auto& left_pt = left_frame->keypoints_[match.feature_idx_current].pt;
+    const auto& right_pt =
+        right_frame->keypoints_[match.feature_idx_initial].pt;
     // if (fabs(left_pt.y - right_pt.y) > 5) continue;
     right_points.push_back(right_pt);
     left_points.push_back(left_pt);
@@ -389,7 +392,7 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
       !vision_factors_.empty()) {
     const slam_types::VisionFactor factor = vision_factors_.back();
     const Frame initial_frame = frame_list_.back();
-    assert(factor.pose_initial == initial_frame.frame_ID_);
+    CHECK_EQ(factor.pose_idx_initial, initial_frame.frame_ID_);
     debug_images_.push_back(
         CreateMatchDebugImage(initial_frame, curr_frame, factor));
   }
