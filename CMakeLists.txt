@@ -10,7 +10,7 @@ SET(CMAKE_CXX_FLAGS "-std=c++11 -Wall -Werror")
 
 IF(${CMAKE_BUILD_TYPE} MATCHES "Release")
   MESSAGE(STATUS "Additional Flags for Release mode")
-  SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -march=native -fopenmp -O3 -DNDEBUG")
+  SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -fopenmp -O3 -DNDEBUG")
 ELSEIF(${CMAKE_BUILD_TYPE} MATCHES "Debug")
   MESSAGE(STATUS "Additional Flags for Debug mode")
   SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g")

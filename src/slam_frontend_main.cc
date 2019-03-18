@@ -64,6 +64,7 @@ using slam_types::OdometryFactor;
 using slam_types::VisionFactor;
 using slam_types::FeatureMatch;
 using slam_types::VisionFeature;
+using std::cout;
 using std::string;
 using std::vector;
 using Eigen::Affine3f;
@@ -156,9 +157,13 @@ void AddFeaturePoints(const slam::FrontendConfig& config,
     const Affine3f robot_to_world = node.pose.RobotToWorldTf();
     for (const slam_types::VisionFeature& f : node.features) {
       if (IsFinite(f.point3d)) {
-        AddPoint(robot_to_world * cam_to_robot * f.point3d,
-                 Color4f(1, 1, 1, 0.2),
-                 marker_ptr);
+        if (f.point3d.z() > 0.1 &&
+            f.point3d.norm() > 0.5 &&
+            f.point3d.norm() < 20.0) {
+          AddPoint(robot_to_world * cam_to_robot * f.point3d,
+                  Color4f(1, 1, 1, 0.2),
+                  marker_ptr);
+        }
       }
     }
   }

@@ -344,7 +344,9 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
   if (!OdomCheck()) {
     return false;
   }
-  LOG(INFO) << "Observing Frame at " << frame_list_.size() << std::endl;
+  if (FLAGS_v > 2) {
+   printf("Observing Frame at %d\n", int(frame_list_.size()));
+  }
   Frame curr_frame, right_temp_frame;
   ExtractFeatures(left_image, &curr_frame);
   ExtractFeatures(right_image, &right_temp_frame);
@@ -509,7 +511,7 @@ FrontendConfig::FrontendConfig() {
   intrinsics_left.k2 = 0.075666;
   intrinsics_left.p1 = -0.000227;
   intrinsics_left.p2 = -0.000320;
-  intrinsics_left.k3 = -0.000227;  // TODO(Joydeep): Should this be 0?
+  intrinsics_left.k3 = 0;
 
   intrinsics_right.fx = 530.158021;
   intrinsics_right.cx = 475.540633;
