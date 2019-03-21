@@ -235,6 +235,7 @@ Frontend::Frontend(const string& config_path) :
       exit(1);
     }
   }
+  matcher_ = cv::BFMatcher::create(config_.bf_matcher_param_);
 }
 
 void Frontend::ObserveOdometry(const Vector3f& translation,
@@ -256,7 +257,7 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
   vector<cv::KeyPoint> frame_keypoints;
   cv::Mat frame_descriptors;
   if (config_.descriptor_extract_type_ ==
-      FrontendConfig::DescriptorExtractorType::FREAK) {
+    FrontendConfig::DescriptorExtractorType::FREAK) {
     fast_feature_detector_->detect(image, frame_keypoints);
     descriptor_extractor_->compute(image, frame_keypoints, frame_descriptors);
   } else {
@@ -265,7 +266,7 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
                                             frame_keypoints,
                                             frame_descriptors);
   }
-  *frame = Frame(frame_keypoints, frame_descriptors, config_, curr_frame_ID_);
+  *frame = Frame(frame_keypoints, frame_descriptors, curr_frame_ID_);
 }
 
 void Frontend::GetFeatureMatches(Frame* past_frame_ptr,
@@ -275,7 +276,7 @@ void Frontend::GetFeatureMatches(Frame* past_frame_ptr,
   Frame& curr_frame = *curr_frame_ptr;
   vector<FeatureMatch> pairs;
   vector<cv::DMatch> matches =
-        past_frame.GetMatches(curr_frame, config_.nn_match_ratio_);
+        GetMatches(past_frame, curr_frame, config_.nn_match_ratio_);
   std::sort(matches.begin(), matches.end());
   const int num_good_matches = matches.size() * config_.best_percent_;
   matches.erase(matches.begin() + num_good_matches, matches.end());
@@ -345,7 +346,7 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
     return false;
   }
   if (FLAGS_v > 2) {
-   printf("Observing Frame at %d\n", int(frame_list_.size()));
+    printf("Observing Frame at %d\n", static_cast<int>(frame_list_.size()));
   }
   Frame curr_frame, right_temp_frame;
   ExtractFeatures(left_image, &curr_frame);
@@ -436,25 +437,29 @@ void Frontend::GetSLAMProblem(SLAMProblem* problem) const {
       odometry_factors_);
 }
 
+int Frontend::GetNumPoses() {
+  return nodes_.size();
+}
+
 /* --- Frame Implementation Code --- */
 
 Frame::Frame(const vector<cv::KeyPoint>& keypoints,
              const cv::Mat& descriptors,
-             const FrontendConfig& config,
              uint64_t frame_ID) {
   keypoints_ = keypoints;
   descriptors_ = descriptors;
-  config_ = config;
   frame_ID_ = frame_ID;
-  matcher_ = cv::BFMatcher::create(config_.bf_matcher_param_);
   is_initial_ = std::vector<bool>(keypoints_.size(), true);
   initial_ids_ = std::vector<int64_t>(keypoints_.size(), -1);
 }
 
-vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
-                                     double nn_match_ratio) {
+vector<cv::DMatch> Frontend::GetMatches(const Frame& frame_query,
+                                        const Frame& frame_train,
+                                        double nn_match_ratio) {
   vector<vector<cv::DMatch>> matches;
-  matcher_->knnMatch(descriptors_, frame.descriptors_, matches, 2);
+  matcher_->knnMatch(frame_query.descriptors_,
+                     frame_train.descriptors_,
+                     matches, 2);
   vector<cv::DMatch> best_matches;
   for (size_t i = 0; i < matches.size(); i++) {
     cv::DMatch first = matches[i][0];
@@ -577,8 +582,6 @@ FrontendConfig::FrontendConfig() {
     std::cout << projection_right<< "\n";
     exit(0);
   }
-  // TODO(Jack): Later we should change how config works because this is done every
-  // time a frame is created.
 }
 
 }  // namespace slam
