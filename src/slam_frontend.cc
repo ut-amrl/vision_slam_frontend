@@ -284,53 +284,6 @@ VisionFactor* Frontend::GetFeatureMatches(Frame* past_frame_ptr,
   std::sort(matches.begin(), matches.end());
   const int num_good_matches = matches.size() * config_.best_percent_;
   matches.erase(matches.begin() + num_good_matches, matches.end());
-  // Only consider matches which are constrained by fundamental matrix.
-/*  std::vector<cv::Point2f> past_points;
-  std::vector<cv::Point2f> curr_points;
-//   if (matches.size() < 7) {
-//     // Not enough points to generate fundamental matrix. No matches are valid.
-//     return new VisionFactor(past_frame.frame_ID_, curr_frame.frame_ID_, pairs);
-//   }
-  for (unsigned long m = 0; m < matches.size(); m++) {
-    cv::DMatch match = matches[m];
-    past_points.push_back(past_frame_ptr->keypoints_[match.queryIdx].pt);
-    curr_points.push_back(curr_frame_ptr->keypoints_[match.trainIdx].pt);
-  }
-  cv::Mat fund = cv::findFundamentalMat(past_points, curr_points);
-  // Check for case where there is more than one solution.
-  std::cout << fund << std::endl;
-  if (fund.rows != 3) {
-    cv::Rect first_mat_roi = cv::Rect(0, 0, 3, 3);
-    cv::Mat fund_copy = fund(first_mat_roi).clone();
-    fund = fund_copy;
-  }
-  // Convert to Eigen format.
-  Eigen::Matrix3f fund_e;
-  cv::cv2eigen(fund, fund_e);
-  std::vector<cv::DMatch> best_matches;
-  float ambig_constraint = 5.0;
-  float avg_constraint = 0.0;
-  float avg_accepted_c = 0.0;
-  for (unsigned long m = 0; m < matches.size(); m++) {
-    // Transform into homogenous coordinates
-    Eigen::Matrix<float, 3, 1> past_ph;
-    past_ph[0] = past_points[m].x;
-    past_ph[1] = past_points[m].y;
-    past_ph[2] = 1.0f;
-    Eigen::Matrix<float, 3, 1> curr_ph;
-    curr_ph[0] = curr_points[m].x;
-    curr_ph[1] = curr_points[m].y;
-    curr_ph[2] = 1.0f;
-    float constraint = (past_ph.transpose() * fund_e * curr_ph).norm();
-    avg_constraint += constraint;
-    if (constraint <= ambig_constraint) {
-      avg_accepted_c += constraint;
-      // This set of points is considered non-ambigious, keep it.
-      best_matches.push_back(matches[m]);
-    }
-  }
-  printf("Avg Overall Constraint: %f\n", avg_constraint / matches.size());
-  printf("Avg Accepted Constraint: %f\n", avg_accepted_c / best_matches.size());*/
   // Restructure matches, add all keypoints to new list.
   for (auto match : matches) {
     // Add it to vision factor.
@@ -399,7 +352,7 @@ void Frontend::RemoveAmbigStereo(Frame* left,
   // Get the left and right points.
   std::vector<cv::Point2f> left_points;
   std::vector<cv::Point2f> right_points;
-  for (unsigned long m = 0; m < stereo_matches.size(); m++) {
+  for (uint64 m = 0; m < stereo_matches.size(); m++) {
     cv::DMatch match = stereo_matches[m];
     left_points.push_back(left->keypoints_[match.queryIdx].pt);
     right_points.push_back(right->keypoints_[match.trainIdx].pt);
@@ -409,7 +362,7 @@ void Frontend::RemoveAmbigStereo(Frame* left,
   std::vector<cv::KeyPoint> left_keypoints, right_keypoints;
   cv::Mat left_descs, right_descs;
   float avg_constraint = 0.0f;
-  for (unsigned long m = 0; m < stereo_matches.size(); m++) {
+  for (uint64 m = 0; m < stereo_matches.size(); m++) {
     // Transform into homogenous coordinates
     Eigen::Matrix<float, 3, 1> left_ph;
     left_ph[0] = left_points[m].x;
@@ -431,7 +384,9 @@ void Frontend::RemoveAmbigStereo(Frame* left,
       right_descs.push_back(right->descriptors_.row(match.trainIdx));
     }
   }
-  stereo_ambig_constraint = avg_constraint / stereo_matches.size() + 1000;
+  float padding_from_avg = 1000;
+  stereo_ambig_constraint =
+      avg_constraint / stereo_matches.size() + padding_from_avg;
   printf("Avg Constraint: %f\n", avg_constraint / stereo_matches.size());
   // Set the left and right data to the update non-ambigious data.
   *left = Frame(left_keypoints, left_descs, left->frame_ID_);
@@ -588,17 +543,6 @@ Matrix3f CameraMatrix(const CameraIntrinsics& I) {
   return M;
 }
 
-void EigenToOpenCV(const Matrix<float, 3, 4>& m1,
-                   cv::Mat* m2_ptr) {
-  cv::Mat& m2 = *m2_ptr;
-  for (int r = 0; r < 3; ++r) {
-    for (int c = 0; c < 4; ++c) {
-      m2.at<float>(r, c) = m1(r, c);
-      CHECK_EQ(m2.at<float>(r, c), m1(r, c));
-    }
-  }
-}
-
 FrontendConfig::FrontendConfig() {
   // Load Default values
   debug_images_ = true;
@@ -668,13 +612,10 @@ FrontendConfig::FrontendConfig() {
         -0.9998698619, -0.01501486552, 0.005900269087,
         0.01272480238,  -0.9588392225,  -0.2836642819;
   left_cam_to_robot = Eigen::Translation3f(XT) * RT;
-
   projection_left = cv::Mat(3, 4, CV_32F);
   projection_right = cv::Mat(3, 4, CV_32F);
-
-  EigenToOpenCV(P_left, &projection_left);
-  EigenToOpenCV(P_right, &projection_right);
-
+  cv::eigen2cv(P_left, projection_left);
+  cv::eigen2cv(P_right, projection_right);
   distortion_coeffs_left = (cv::Mat_<float>(5, 1) <<
       intrinsics_left.k1,
       intrinsics_left.k2,
@@ -687,7 +628,6 @@ FrontendConfig::FrontendConfig() {
     intrinsics_right.p1,
     intrinsics_right.p2,
     intrinsics_right.k3);
-  
   Matrix3f ecam_left, ecam_right;
   cv::cv2eigen(camera_matrix_left, ecam_left);
   cv::cv2eigen(camera_matrix_right, ecam_right);
@@ -696,7 +636,6 @@ FrontendConfig::FrontendConfig() {
   C << 0.0, -A[2], A[1], A[2], 0.0, -A[1], -A[2], A[1], 0.0;
   fundamental =
       ecam_right.inverse().transpose() * RT * ecam_left.transpose() * C;
-  
   if (false) {
     std::cout << "\n\nprojection_left:\n";
     std::cout << projection_left << "\n";
