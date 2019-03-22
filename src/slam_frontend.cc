@@ -122,11 +122,17 @@ void Frontend::Calculate3DPoints(Frame* left_frame,
   // This means right will be the 'initial' and the left_frame
   // will be the 'current' frame.
   VisionFactor matches;
+  FrontendConfig config_backup = config_;
   // Assure that every point has a match.
-  float best_percent = config_.best_percent_;
   config_.best_percent_ = 1.0;
+  config_.nn_match_ratio_ = 0.9;
+  // TODO(Jack): This will not work for arbitrary mathing params. It needs
+  // to be forced to find matches of known keypoint locations.
   GetFeatureMatches(right_frame, left_frame, &matches);
-  config_.best_percent_ = best_percent;
+  if (matches.feature_matches.empty()) {
+    printf("WARNING: no stereo matches found!\n");
+  }
+  config_ = config_backup;
   for (FeatureMatch match : matches.feature_matches) {
     const auto& left_pt = left_frame->keypoints_[match.feature_idx_current].pt;
     const auto& right_pt =
@@ -460,7 +466,7 @@ vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
     cv::DMatch first = matches[i][0];
     float dist1 = matches[i][0].distance;
     float dist2 = matches[i][1].distance;
-    if (dist1 < config_.nn_match_ratio_ * dist2) {
+    if (dist1 < nn_match_ratio * dist2) {
       best_matches.push_back(first);
     }
   }

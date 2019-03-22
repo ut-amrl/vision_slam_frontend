@@ -31,6 +31,32 @@
 
 namespace slam_types {
 
+  
+// Pinhole camera intrinsics parameters.
+// The convention used here matches that of OpenCV:
+// https://docs.opencv.org/2.4/doc/tutorials/calib3d/camera_calibration/
+//     camera_calibration.html
+struct CameraIntrinsics {
+  // Focal length x.
+  float fx;
+  // Focal length y.
+  float fy;
+  // Principal point x.
+  float cx;
+  // Principal point y.
+  float cy;
+};
+
+// The camera extrinsics consists of the coordinate transform from the
+// camera to the robot pose. That is, it consists of the translation and
+// rotation that takes a point from the camera frame to the robot frame.
+struct CameraExtrinsics {
+  // 3D vector of translation.
+  float translation[3];
+  // Rotation in scaled angle-axis (Lie algebra) form.
+  float rotation[3];
+};
+
 struct VisionFeature {
   // Index of this feature in the features vector for the node, stored here
   // for redundancy.
