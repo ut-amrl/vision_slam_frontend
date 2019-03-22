@@ -90,8 +90,8 @@ struct FrontendConfig {
   CameraIntrinsics intrinsics_left, intrinsics_right;
   // Derived parameters, computed from intrinsics.
   cv::Mat camera_matrix_left, camera_matrix_right, distortion_coeffs_left,
-      projection_left, projection_right;
-
+      distortion_coeffs_right, projection_left, projection_right;
+  Eigen::Matrix3f fundamental;
   // Affine transforms from frame of camera to robot.
   Eigen::Affine3f left_cam_to_robot;
 };
@@ -149,13 +149,15 @@ class Frontend {
   void ExtractFeatures(cv::Mat image, Frame* curr_frame);
   // Return feature matches between frame1 and frame2, and also update frame2
   // to track the initial frame for all matches.
-  void GetFeatureMatches(Frame* past_frame_ptr,
-                         Frame* curr_frame_ptr,
-                         slam_types::VisionFactor* correspondence);
+  slam_types::VisionFactor* GetFeatureMatches(Frame* past_frame_ptr,
+                                              Frame* curr_frame_ptr);
   // Returns the matches between frame_query and frame_train
   std::vector<cv::DMatch> GetMatches(const Frame& frame_query,
                                      const Frame& frame_train,
                                      double nn_match_ratio);
+  void RemoveAmbigStereo(Frame* left,
+                         Frame* right,
+                         const std::vector<cv::DMatch> stereo_matches);
   // Create a new odometry factor, and reset odometry tracking variables.
   void AddOdometryFactor();
   // Removes radial distortion from all observed feature points.
