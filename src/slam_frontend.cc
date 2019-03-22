@@ -32,6 +32,7 @@
 #include "opencv2/imgproc.hpp"
 #include "opencv2/xfeatures2d.hpp"
 #include "glog/logging.h"
+#include "opencv2/core/eigen.hpp"
 
 #include "slam_frontend.h"
 
@@ -121,19 +122,16 @@ void Frontend::Calculate3DPoints(Frame* left_frame,
   // the left frames is_initial_ book-keeping.
   // This means right will be the 'initial' and the left_frame
   // will be the 'current' frame.
-  VisionFactor matches;
-  FrontendConfig config_backup = config_;
+  VisionFactor* matches;
   // Assure that every point has a match.
+  float best_percent = config_.best_percent_;
   config_.best_percent_ = 1.0;
-  config_.nn_match_ratio_ = 0.9;
-  // TODO(Jack): This will not work for arbitrary mathing params. It needs
-  // to be forced to find matches of known keypoint locations.
-  GetFeatureMatches(right_frame, left_frame, &matches);
-  if (matches.feature_matches.empty()) {
-    printf("WARNING: no stereo matches found!\n");
+  matches = GetFeatureMatches(right_frame, left_frame);
+  config_.best_percent_ = best_percent;
+  if (matches->feature_matches.size() == 0) {
+    return;
   }
-  config_ = config_backup;
-  for (FeatureMatch match : matches.feature_matches) {
+  for (FeatureMatch match : matches->feature_matches) {
     const auto& left_pt = left_frame->keypoints_[match.feature_idx_current].pt;
     const auto& right_pt =
         right_frame->keypoints_[match.feature_idx_initial].pt;
@@ -155,7 +153,7 @@ void Frontend::Calculate3DPoints(Frame* left_frame,
                         right_points,
                         triangulated_points);
   // Make sure all keypoints are matched to something.
-  CHECK_EQ(triangulated_points.cols, matches.feature_matches.size());
+  CHECK_EQ(triangulated_points.cols, matches->feature_matches.size());
   for (int64_t c = 0; c < triangulated_points.cols; ++c) {
     cv::Mat col = triangulated_points.col(c);
     points->push_back(
@@ -167,8 +165,9 @@ void Frontend::Calculate3DPoints(Frame* left_frame,
   if (config_.debug_images_) {
     debug_stereo_images_.push_back(CreateStereoDebugImage(*left_frame,
                                                           *right_frame,
-                                                          matches));
+                                                          *matches));
   }
+  free(matches);
 }
 
 bool Frontend::OdomCheck() {
@@ -241,6 +240,7 @@ Frontend::Frontend(const string& config_path) :
       exit(1);
     }
   }
+  matcher_ = cv::BFMatcher::create(config_.bf_matcher_param_);
 }
 
 void Frontend::ObserveOdometry(const Vector3f& translation,
@@ -262,7 +262,7 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
   vector<cv::KeyPoint> frame_keypoints;
   cv::Mat frame_descriptors;
   if (config_.descriptor_extract_type_ ==
-      FrontendConfig::DescriptorExtractorType::FREAK) {
+    FrontendConfig::DescriptorExtractorType::FREAK) {
     fast_feature_detector_->detect(image, frame_keypoints);
     descriptor_extractor_->compute(image, frame_keypoints, frame_descriptors);
   } else {
@@ -271,20 +271,66 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
                                             frame_keypoints,
                                             frame_descriptors);
   }
-  *frame = Frame(frame_keypoints, frame_descriptors, config_, curr_frame_ID_);
+  *frame = Frame(frame_keypoints, frame_descriptors, curr_frame_ID_);
 }
 
-void Frontend::GetFeatureMatches(Frame* past_frame_ptr,
-                                 Frame* curr_frame_ptr,
-                                 VisionFactor* correspondence) {
+VisionFactor* Frontend::GetFeatureMatches(Frame* past_frame_ptr,
+                                          Frame* curr_frame_ptr) {
   Frame& past_frame = *past_frame_ptr;
   Frame& curr_frame = *curr_frame_ptr;
   vector<FeatureMatch> pairs;
   vector<cv::DMatch> matches =
-        past_frame.GetMatches(curr_frame, config_.nn_match_ratio_);
+        GetMatches(past_frame, curr_frame, config_.nn_match_ratio_);
   std::sort(matches.begin(), matches.end());
   const int num_good_matches = matches.size() * config_.best_percent_;
   matches.erase(matches.begin() + num_good_matches, matches.end());
+  // Only consider matches which are constrained by fundamental matrix.
+/*  std::vector<cv::Point2f> past_points;
+  std::vector<cv::Point2f> curr_points;
+//   if (matches.size() < 7) {
+//     // Not enough points to generate fundamental matrix. No matches are valid.
+//     return new VisionFactor(past_frame.frame_ID_, curr_frame.frame_ID_, pairs);
+//   }
+  for (unsigned long m = 0; m < matches.size(); m++) {
+    cv::DMatch match = matches[m];
+    past_points.push_back(past_frame_ptr->keypoints_[match.queryIdx].pt);
+    curr_points.push_back(curr_frame_ptr->keypoints_[match.trainIdx].pt);
+  }
+  cv::Mat fund = cv::findFundamentalMat(past_points, curr_points);
+  // Check for case where there is more than one solution.
+  std::cout << fund << std::endl;
+  if (fund.rows != 3) {
+    cv::Rect first_mat_roi = cv::Rect(0, 0, 3, 3);
+    cv::Mat fund_copy = fund(first_mat_roi).clone();
+    fund = fund_copy;
+  }
+  // Convert to Eigen format.
+  Eigen::Matrix3f fund_e;
+  cv::cv2eigen(fund, fund_e);
+  std::vector<cv::DMatch> best_matches;
+  float ambig_constraint = 5.0;
+  float avg_constraint = 0.0;
+  float avg_accepted_c = 0.0;
+  for (unsigned long m = 0; m < matches.size(); m++) {
+    // Transform into homogenous coordinates
+    Eigen::Matrix<float, 3, 1> past_ph;
+    past_ph[0] = past_points[m].x;
+    past_ph[1] = past_points[m].y;
+    past_ph[2] = 1.0f;
+    Eigen::Matrix<float, 3, 1> curr_ph;
+    curr_ph[0] = curr_points[m].x;
+    curr_ph[1] = curr_points[m].y;
+    curr_ph[2] = 1.0f;
+    float constraint = (past_ph.transpose() * fund_e * curr_ph).norm();
+    avg_constraint += constraint;
+    if (constraint <= ambig_constraint) {
+      avg_accepted_c += constraint;
+      // This set of points is considered non-ambigious, keep it.
+      best_matches.push_back(matches[m]);
+    }
+  }
+  printf("Avg Overall Constraint: %f\n", avg_constraint / matches.size());
+  printf("Avg Accepted Constraint: %f\n", avg_accepted_c / best_matches.size());*/
   // Restructure matches, add all keypoints to new list.
   for (auto match : matches) {
     // Add it to vision factor.
@@ -300,8 +346,8 @@ void Frontend::GetFeatureMatches(Frame* past_frame_ptr,
            past_frame.initial_ids_[match.queryIdx];
     }
   }
-  *correspondence = VisionFactor(
-      past_frame.frame_ID_, curr_frame.frame_ID_, pairs);
+//   printf("%lu\n", pairs.size());
+  return new VisionFactor(past_frame.frame_ID_, curr_frame.frame_ID_, pairs);
 }
 
 void Frontend::AddOdometryFactor() {
@@ -318,6 +364,9 @@ void Frontend::AddOdometryFactor() {
 
 void Frontend::UndistortFeaturePoints(vector<VisionFeature>* features_ptr) {
   vector<VisionFeature>& features = *features_ptr;
+  if (features.size() == 0) {
+    return;
+  }
   const Vector2f p0(config_.intrinsics_left.cx, config_.intrinsics_left.cy);
   vector<cv::Point2f> distorted_pts;
   for (size_t i = 0; i < features.size(); ++i) {
@@ -343,6 +392,52 @@ void Frontend::UndistortFeaturePoints(vector<VisionFeature>* features_ptr) {
   }
 }
 
+static float stereo_ambig_constraint = 10000;
+void Frontend::RemoveAmbigStereo(Frame* left,
+                                 Frame* right,
+                                 const std::vector<cv::DMatch> stereo_matches) {
+  // Get the left and right points.
+  std::vector<cv::Point2f> left_points;
+  std::vector<cv::Point2f> right_points;
+  for (unsigned long m = 0; m < stereo_matches.size(); m++) {
+    cv::DMatch match = stereo_matches[m];
+    left_points.push_back(left->keypoints_[match.queryIdx].pt);
+    right_points.push_back(right->keypoints_[match.trainIdx].pt);
+  }
+//   cv::Mat fund = cv::findFundamentalMat(left_points, right_points);
+  // Convert to Eigen format
+  std::vector<cv::KeyPoint> left_keypoints, right_keypoints;
+  cv::Mat left_descs, right_descs;
+  float avg_constraint = 0.0f;
+  for (unsigned long m = 0; m < stereo_matches.size(); m++) {
+    // Transform into homogenous coordinates
+    Eigen::Matrix<float, 3, 1> left_ph;
+    left_ph[0] = left_points[m].x;
+    left_ph[1] = left_points[m].y;
+    left_ph[2] = 1.0f;
+    Eigen::Matrix<float, 3, 1> right_ph;
+    right_ph[0] = right_points[m].x;
+    right_ph[1] = right_points[m].y;
+    right_ph[2] = 1.0f;
+    float constraint =
+        (left_ph.transpose() * config_.fundamental *right_ph).norm();
+    avg_constraint += constraint;
+    if (constraint <= stereo_ambig_constraint) {
+      // This set of points is considered non-ambigious, keep it.
+      cv::DMatch match = stereo_matches[m];
+      left_keypoints.push_back(left->keypoints_[match.queryIdx]);
+      right_keypoints.push_back(right->keypoints_[match.trainIdx]);
+      left_descs.push_back(left->descriptors_.row(match.queryIdx));
+      right_descs.push_back(right->descriptors_.row(match.trainIdx));
+    }
+  }
+  stereo_ambig_constraint = avg_constraint / stereo_matches.size() + 1000;
+  printf("Avg Constraint: %f\n", avg_constraint / stereo_matches.size());
+  // Set the left and right data to the update non-ambigious data.
+  *left = Frame(left_keypoints, left_descs, left->frame_ID_);
+  *right = Frame(right_keypoints, right_descs, right->frame_ID_);
+}
+
 bool Frontend::ObserveImage(const cv::Mat& left_image,
                             const cv::Mat& right_image,
                             double time) {
@@ -351,11 +446,16 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
     return false;
   }
   if (FLAGS_v > 2) {
-   printf("Observing Frame at %d\n", int(frame_list_.size()));
+    printf("Observing Frame at %d\n", static_cast<int>(frame_list_.size()));
   }
   Frame curr_frame, right_temp_frame;
   ExtractFeatures(left_image, &curr_frame);
   ExtractFeatures(right_image, &right_temp_frame);
+  // Remove ambigious stereo matching points from left's and right's points.
+  std::vector<cv::DMatch> stereo_matches = GetMatches(curr_frame,
+                                                      right_temp_frame,
+                                                      config_.nn_match_ratio_);
+  RemoveAmbigStereo(&curr_frame, &right_temp_frame, stereo_matches);
   // If we are running a debug version, attach image to frame.
   if (config_.debug_images_) {
     curr_frame.debug_image_ = left_image;
@@ -363,14 +463,15 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
   }
   // Keep track of the points that are original to this frame.
   for (Frame& past_frame : frame_list_) {
-    VisionFactor matches;
-    GetFeatureMatches(&past_frame, &curr_frame, &matches);
+    VisionFactor* matches;
+    matches = GetFeatureMatches(&past_frame, &curr_frame);
     // TODO(Jack): verify that this conditional check does not mess up
     // book-keping.
     // if (matches.feature_matches.size() > config_.min_vision_matches) {
     //   vision_factors_.push_back(matches);
     // }
-    vision_factors_.push_back(matches);
+    vision_factors_.push_back(*matches);
+    free(matches);
   }
   // Calculate the depths of the points.
   vector<Vector3f> points;
@@ -442,25 +543,29 @@ void Frontend::GetSLAMProblem(SLAMProblem* problem) const {
       odometry_factors_);
 }
 
+int Frontend::GetNumPoses() {
+  return nodes_.size();
+}
+
 /* --- Frame Implementation Code --- */
 
 Frame::Frame(const vector<cv::KeyPoint>& keypoints,
              const cv::Mat& descriptors,
-             const FrontendConfig& config,
              uint64_t frame_ID) {
   keypoints_ = keypoints;
   descriptors_ = descriptors;
-  config_ = config;
   frame_ID_ = frame_ID;
-  matcher_ = cv::BFMatcher::create(config_.bf_matcher_param_);
   is_initial_ = std::vector<bool>(keypoints_.size(), true);
   initial_ids_ = std::vector<int64_t>(keypoints_.size(), -1);
 }
 
-vector<cv::DMatch> Frame::GetMatches(const Frame& frame,
-                                     double nn_match_ratio) {
+vector<cv::DMatch> Frontend::GetMatches(const Frame& frame_query,
+                                        const Frame& frame_train,
+                                        double nn_match_ratio) {
   vector<vector<cv::DMatch>> matches;
-  matcher_->knnMatch(descriptors_, frame.descriptors_, matches, 2);
+  matcher_->knnMatch(frame_query.descriptors_,
+                     frame_train.descriptors_,
+                     matches, 2);
   vector<cv::DMatch> best_matches;
   for (size_t i = 0; i < matches.size(); i++) {
     cv::DMatch first = matches[i][0];
@@ -576,6 +681,22 @@ FrontendConfig::FrontendConfig() {
       intrinsics_left.p1,
       intrinsics_left.p2,
       intrinsics_left.k3);
+  distortion_coeffs_right = (cv::Mat_<float>(5, 1) <<
+    intrinsics_right.k1,
+    intrinsics_right.k2,
+    intrinsics_right.p1,
+    intrinsics_right.p2,
+    intrinsics_right.k3);
+  
+  Matrix3f ecam_left, ecam_right;
+  cv::cv2eigen(camera_matrix_left, ecam_left);
+  cv::cv2eigen(camera_matrix_right, ecam_right);
+  Matrix<float, 3, 1> A = ecam_left * RT.transpose() * XT;
+  Matrix3f C;
+  C << 0.0, -A[2], A[1], A[2], 0.0, -A[1], -A[2], A[1], 0.0;
+  fundamental =
+      ecam_right.inverse().transpose() * RT * ecam_left.transpose() * C;
+  
   if (false) {
     std::cout << "\n\nprojection_left:\n";
     std::cout << projection_left << "\n";
@@ -583,8 +704,6 @@ FrontendConfig::FrontendConfig() {
     std::cout << projection_right<< "\n";
     exit(0);
   }
-  // TODO(Jack): Later we should change how config works because this is done every
-  // time a frame is created.
 }
 
 }  // namespace slam

@@ -90,8 +90,8 @@ struct FrontendConfig {
   CameraIntrinsics intrinsics_left, intrinsics_right;
   // Derived parameters, computed from intrinsics.
   cv::Mat camera_matrix_left, camera_matrix_right, distortion_coeffs_left,
-      projection_left, projection_right;
-
+      distortion_coeffs_right, projection_left, projection_right;
+  Eigen::Matrix3f fundamental;
   // Affine transforms from frame of camera to robot.
   Eigen::Affine3f left_cam_to_robot;
 };
@@ -101,18 +101,13 @@ class Frame {
  public:
   Frame(const std::vector<cv::KeyPoint>& keypoints,
         const cv::Mat& descriptors,
-        const slam::FrontendConfig& config,
         uint64_t frame_ID);
   Frame() {}
-  std::vector<cv::DMatch> GetMatches(const slam::Frame& frame,
-                                     double nn_match_ratio);
   uint64_t frame_ID_;
-  cv::Ptr<cv::BFMatcher> matcher_;
   std::vector<cv::KeyPoint> keypoints_;
   std::vector<bool> is_initial_;
   std::vector<int64_t> initial_ids_;
   cv::Mat descriptors_;
-  FrontendConfig config_;
   std::unordered_map<uint64_t,
                      std::pair<uint64_t, uint64_t>> initial_appearances;
   cv::Mat debug_image_;
@@ -141,9 +136,7 @@ class Frontend {
   void GetSLAMProblem(slam_types::SLAMProblem* problem) const;
 
   // Get the number od poses (SLAM nodes) added so far.
-  int GetNumPoses() {
-    return nodes_.size();
-  }
+  int GetNumPoses();
 
   // Get the frontend configuration parameters.
   FrontendConfig GetConfig() { return config_; }
@@ -156,9 +149,15 @@ class Frontend {
   void ExtractFeatures(cv::Mat image, Frame* curr_frame);
   // Return feature matches between frame1 and frame2, and also update frame2
   // to track the initial frame for all matches.
-  void GetFeatureMatches(Frame* frame1,
-                         Frame* frame2,
-                         slam_types::VisionFactor* correspondence);
+  slam_types::VisionFactor* GetFeatureMatches(Frame* past_frame_ptr,
+                                              Frame* curr_frame_ptr);
+  // Returns the matches between frame_query and frame_train
+  std::vector<cv::DMatch> GetMatches(const Frame& frame_query,
+                                     const Frame& frame_train,
+                                     double nn_match_ratio);
+  void RemoveAmbigStereo(Frame* left,
+                         Frame* right,
+                         const std::vector<cv::DMatch> stereo_matches);
   // Create a new odometry factor, and reset odometry tracking variables.
   void AddOdometryFactor();
   // Removes radial distortion from all observed feature points.
@@ -187,6 +186,8 @@ class Frontend {
   double odom_timestamp_;
   // Configuration parameters for frontend.
   FrontendConfig config_;
+  // Brute-force matcher for descriptor matching
+  cv::Ptr<cv::BFMatcher> matcher_;
   // Next frame ID.
   uint64_t curr_frame_ID_;
   std::vector<Frame> frame_list_;
