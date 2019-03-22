@@ -543,17 +543,6 @@ Matrix3f CameraMatrix(const CameraIntrinsics& I) {
   return M;
 }
 
-void EigenToOpenCV(const Matrix<float, 3, 4>& m1,
-                   cv::Mat* m2_ptr) {
-  cv::Mat& m2 = *m2_ptr;
-  for (int r = 0; r < 3; ++r) {
-    for (int c = 0; c < 4; ++c) {
-      m2.at<float>(r, c) = m1(r, c);
-      CHECK_EQ(m2.at<float>(r, c), m1(r, c));
-    }
-  }
-}
-
 FrontendConfig::FrontendConfig() {
   // Load Default values
   debug_images_ = true;
@@ -625,8 +614,8 @@ FrontendConfig::FrontendConfig() {
   left_cam_to_robot = Eigen::Translation3f(XT) * RT;
   projection_left = cv::Mat(3, 4, CV_32F);
   projection_right = cv::Mat(3, 4, CV_32F);
-  EigenToOpenCV(P_left, &projection_left);
-  EigenToOpenCV(P_right, &projection_right);
+  cv::eigen2cv(P_left, projection_left);
+  cv::eigen2cv(P_right, projection_right);
   distortion_coeffs_left = (cv::Mat_<float>(5, 1) <<
       intrinsics_left.k1,
       intrinsics_left.k2,
