@@ -44,6 +44,8 @@
 #include "cv_bridge/cv_bridge.h"
 #include "visualization_msgs/Marker.h"
 #include "visualization_msgs/MarkerArray.h"
+#include "vision_slam_frontend/CameraIntrinsics.h"
+#include "vision_slam_frontend/CameraExtrinsics.h"
 
 #include "gui_helpers.h"
 #include "slam_frontend.h"
@@ -68,6 +70,7 @@ using std::cout;
 using std::string;
 using std::vector;
 using Eigen::Affine3f;
+using Eigen::AngleAxisf;
 using Eigen::Quaternionf;
 using Eigen::Translation3f;
 using Eigen::Vector3f;
@@ -334,6 +337,35 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
             exception.what());
     return;
   }
+  
+  slam_types::CameraExtrinsics a;
+  const Affine3f extrinsics = slam_frontend.GetConfig().left_cam_to_robot;
+  const Vector3f rT = extrinsics.translation();
+  const AngleAxisf rR(extrinsics.rotation());
+
+  for (int i = 0; i < 3; ++i) {
+    a.translation[i] = rT[i];
+    if (rR.angle() > 1e-8) {
+      a.rotation[i] = rR.axis().normalized()[i] * rR.angle();
+    } else {
+      a.rotation[i] = 0;
+    }
+  }
+  output_bag.write<vision_slam_frontend::CameraExtrinsics>(
+    "extrinsics",
+    ros::Time::now(),
+    ExtrinsicsToRos(a));
+  vision_slam_frontend::CameraIntrinsics k;
+  k.fx = slam_frontend.GetConfig().intrinsics_left.fx;
+  k.cx = slam_frontend.GetConfig().intrinsics_left.cx;
+  k.fy = slam_frontend.GetConfig().intrinsics_left.fy;
+  k.cy = slam_frontend.GetConfig().intrinsics_left.cy;
+
+  output_bag.write<vision_slam_frontend::CameraIntrinsics>(
+      "intrinsics",
+      ros::Time::now(),
+      k);
+  
   SLAMProblem problem;
   slam_frontend.GetSLAMProblem(&problem);
   output_bag.write<vision_slam_frontend::SLAMProblem>(

@@ -525,7 +525,7 @@ vector<cv::DMatch> Frontend::GetMatches(const Frame& frame_query,
     cv::DMatch first = matches[i][0];
     float dist1 = matches[i][0].distance;
     float dist2 = matches[i][1].distance;
-    if (dist1 < config_.nn_match_ratio_ * dist2) {
+    if (dist1 < nn_match_ratio * dist2) {
       best_matches.push_back(first);
     }
   }

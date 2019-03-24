@@ -123,4 +123,24 @@ SLAMProblemToRos(const slam_types::SLAMProblem& problem) {
   return ros_problem;
 }
 
+vision_slam_frontend::CameraIntrinsics
+IntrinsicsToRos(const slam_types::CameraIntrinsics& k) {
+  vision_slam_frontend::CameraIntrinsics ros_k;
+  ros_k.fx = k.fx;
+  ros_k.cx = k.cx;
+  ros_k.fy = k.fy;
+  ros_k.cy = k.cy;
+  return ros_k;
+}
+
+vision_slam_frontend::CameraExtrinsics
+ExtrinsicsToRos(const slam_types::CameraExtrinsics& a) {
+  vision_slam_frontend::CameraExtrinsics ros_a;
+  for (int i = 0; i < 3; ++i) {
+    ros_a.translation[i] = a.translation[i];
+    ros_a.rotation[i] = a.rotation[i];
+  }
+  return ros_a;
+}
+
 #endif  // __SLAM_TO_ROS_H__
