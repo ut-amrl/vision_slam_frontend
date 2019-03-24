@@ -373,7 +373,7 @@ void Frontend::RemoveAmbigStereo(Frame* left,
     right_ph[1] = right_points[m].y;
     right_ph[2] = 1.0f;
     float constraint =
-        (left_ph.transpose() * config_.fundamental *right_ph).norm();
+        (left_ph.transpose() * config_.fundamental * right_ph).norm();
     avg_constraint += constraint;
     if (constraint <= stereo_ambig_constraint) {
       // This set of points is considered non-ambigious, keep it.
@@ -384,10 +384,9 @@ void Frontend::RemoveAmbigStereo(Frame* left,
       right_descs.push_back(right->descriptors_.row(match.trainIdx));
     }
   }
-  float padding_from_avg = 1000;
+  float padding_from_average = 2.0f;
   stereo_ambig_constraint =
-      avg_constraint / stereo_matches.size() + padding_from_avg;
-  printf("Avg Constraint: %f\n", avg_constraint / stereo_matches.size());
+      avg_constraint / stereo_matches.size() + padding_from_average;
   // Set the left and right data to the update non-ambigious data.
   *left = Frame(left_keypoints, left_descs, left->frame_ID_);
   *right = Frame(right_keypoints, right_descs, right->frame_ID_);
@@ -631,11 +630,13 @@ FrontendConfig::FrontendConfig() {
   Matrix3f ecam_left, ecam_right;
   cv::cv2eigen(camera_matrix_left, ecam_left);
   cv::cv2eigen(camera_matrix_right, ecam_right);
-  Matrix<float, 3, 1> A = ecam_left * RT.transpose() * XT;
+  Matrix3f rotation = A_right.block<3, 3>(0, 0);
+  Eigen::MatrixXf translation = A_right.block<3, 1>(0,3);
+  Matrix<float, 3, 1> A = ecam_left * rotation.transpose() * translation;
   Matrix3f C;
-  C << 0.0, -A[2], A[1], A[2], 0.0, -A[1], -A[2], A[1], 0.0;
+  C << 0.0, -A[3], A[2], A[3], 0.0, -A[1], -A[2], A[1], 0.0;
   fundamental =
-      ecam_right.inverse().transpose() * RT * ecam_left.transpose() * C;
+      ecam_right.inverse().transpose() * rotation * ecam_left.transpose() * C;
   if (false) {
     std::cout << "\n\nprojection_left:\n";
     std::cout << projection_left << "\n";
