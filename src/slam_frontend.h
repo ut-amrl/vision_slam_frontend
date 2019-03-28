@@ -150,14 +150,19 @@ class Frontend {
   // Return feature matches between frame1 and frame2, and also update frame2
   // to track the initial frame for all matches.
   slam_types::VisionFactor* GetFeatureMatches(Frame* past_frame_ptr,
-                                              Frame* curr_frame_ptr);
+                                              Frame* curr_frame_ptr,
+                                              bool mark_initial);
   // Returns the matches between frame_query and frame_train
   std::vector<cv::DMatch> GetMatches(const Frame& frame_query,
                                      const Frame& frame_train,
                                      double nn_match_ratio);
-  void RemoveAmbigStereo(Frame* left,
-                         Frame* right,
-                         const std::vector<cv::DMatch> stereo_matches);
+  void RemoveAmbigMatches(Frame* frame_query,
+                          Frame* frame_train,
+                          bool change_second_frame);
+  slam_types::VisionFactor* ConstrainedMatches(Frame* left_curr,
+                                               Frame* right_curr,
+                                               Frame* left_past,
+                                               Frame* right_past);
   // Create a new odometry factor, and reset odometry tracking variables.
   void AddOdometryFactor();
   // Removes radial distortion from all observed feature points.
@@ -190,7 +195,7 @@ class Frontend {
   cv::Ptr<cv::BFMatcher> matcher_;
   // Next frame ID.
   uint64_t curr_frame_ID_;
-  std::vector<Frame> frame_list_;
+  std::vector<std::pair<Frame, Frame>> frame_list_;
   cv::Ptr<cv::Feature2D> descriptor_extractor_;
   cv::Ptr<cv::FastFeatureDetector> fast_feature_detector_;
   // Formatted data for slam problem

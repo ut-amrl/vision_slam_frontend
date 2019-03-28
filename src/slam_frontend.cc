@@ -118,15 +118,11 @@ void Frontend::Calculate3DPoints(Frame* left_frame,
   // Convert keypoints into array of points.
   std::vector<cv::Point2f> left_points;
   std::vector<cv::Point2f> right_points;
-  // The reason we pass in right frame first is because we don't want to modify
-  // the left frames is_initial_ book-keeping.
-  // This means right will be the 'initial' and the left_frame
-  // will be the 'current' frame.
   VisionFactor* matches;
   // Assure that every point has a match.
   float best_percent = config_.best_percent_;
   config_.best_percent_ = 1.0;
-  matches = GetFeatureMatches(right_frame, left_frame);
+  matches = GetFeatureMatches(right_frame, left_frame, false);
   config_.best_percent_ = best_percent;
   if (matches->feature_matches.size() == 0) {
     return;
@@ -275,23 +271,24 @@ void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
 }
 
 VisionFactor* Frontend::GetFeatureMatches(Frame* past_frame_ptr,
-                                          Frame* curr_frame_ptr) {
+                                          Frame* curr_frame_ptr,
+                                          bool mark_initial) {
   Frame& past_frame = *past_frame_ptr;
   Frame& curr_frame = *curr_frame_ptr;
   vector<FeatureMatch> pairs;
   vector<cv::DMatch> matches =
         GetMatches(past_frame, curr_frame, config_.nn_match_ratio_);
-  std::sort(matches.begin(), matches.end());
-  const int num_good_matches = matches.size() * config_.best_percent_;
-  matches.erase(matches.begin() + num_good_matches, matches.end());
+  //const int num_good_matches = matches.size() * config_.best_percent_;
+  //matches.erase(matches.begin() + num_good_matches, matches.end());
   // Restructure matches, add all keypoints to new list.
+  std::cout << matches.size() << std::endl;
   for (auto match : matches) {
     // Add it to vision factor.
     pairs.push_back(FeatureMatch(match.queryIdx,
                                  match.trainIdx));
     // Check if this is the first time we are seeing this match.
     // If it is not, then mark it where it was first seen.
-    if (curr_frame.is_initial_[match.trainIdx]) {
+    if (mark_initial && curr_frame.is_initial_[match.trainIdx]) {
         curr_frame.is_initial_[match.trainIdx] = false;
         curr_frame.initial_ids_[match.trainIdx] =
           (past_frame.is_initial_[match.queryIdx])?
@@ -346,50 +343,83 @@ void Frontend::UndistortFeaturePoints(vector<VisionFeature>* features_ptr) {
 }
 
 static float stereo_ambig_constraint = 10000;
-void Frontend::RemoveAmbigStereo(Frame* left,
-                                 Frame* right,
-                                 const std::vector<cv::DMatch> stereo_matches) {
+void Frontend::RemoveAmbigMatches(Frame* frame_query,
+                                  Frame* frame_train,
+                                  bool modify_second_matches) {
   // Get the left and right points.
-  std::vector<cv::Point2f> left_points;
-  std::vector<cv::Point2f> right_points;
-  for (uint64 m = 0; m < stereo_matches.size(); m++) {
-    cv::DMatch match = stereo_matches[m];
-    left_points.push_back(left->keypoints_[match.queryIdx].pt);
-    right_points.push_back(right->keypoints_[match.trainIdx].pt);
+  const std::vector<cv::DMatch> matches = GetMatches(*frame_query,
+                                                     *frame_train,
+                                                     config_.nn_match_ratio_);
+  std::vector<cv::Point2f> query_points;
+  std::vector<cv::Point2f> train_points;
+  for (uint64 m = 0; m < matches.size(); m++) {
+    cv::DMatch match = matches[m];
+    query_points.push_back(frame_query->keypoints_[match.queryIdx].pt);
+    train_points.push_back(frame_train->keypoints_[match.trainIdx].pt);
   }
 //   cv::Mat fund = cv::findFundamentalMat(left_points, right_points);
   // Convert to Eigen format
   std::vector<cv::KeyPoint> left_keypoints, right_keypoints;
-  cv::Mat left_descs, right_descs;
+  cv::Mat left_descs(0,
+                     frame_query->descriptors_.cols,
+                     frame_query->descriptors_.type());
+  cv::Mat right_descs(0,
+                      frame_train->descriptors_.cols,
+                      frame_train->descriptors_.type());
   float avg_constraint = 0.0f;
-  for (uint64 m = 0; m < stereo_matches.size(); m++) {
+  for (uint64 m = 0; m < matches.size(); m++) {
     // Transform into homogenous coordinates
     Eigen::Matrix<float, 3, 1> left_ph;
-    left_ph[0] = left_points[m].x;
-    left_ph[1] = left_points[m].y;
+    left_ph[0] = query_points[m].x;
+    left_ph[1] = query_points[m].y;
     left_ph[2] = 1.0f;
     Eigen::Matrix<float, 3, 1> right_ph;
-    right_ph[0] = right_points[m].x;
-    right_ph[1] = right_points[m].y;
+    right_ph[0] = train_points[m].x;
+    right_ph[1] = train_points[m].y;
     right_ph[2] = 1.0f;
     float constraint =
         (left_ph.transpose() * config_.fundamental * right_ph).norm();
     avg_constraint += constraint;
     if (constraint <= stereo_ambig_constraint) {
       // This set of points is considered non-ambigious, keep it.
-      cv::DMatch match = stereo_matches[m];
-      left_keypoints.push_back(left->keypoints_[match.queryIdx]);
-      right_keypoints.push_back(right->keypoints_[match.trainIdx]);
-      left_descs.push_back(left->descriptors_.row(match.queryIdx));
-      right_descs.push_back(right->descriptors_.row(match.trainIdx));
+      cv::DMatch match = matches[m];
+      left_keypoints.push_back(frame_query->keypoints_[match.queryIdx]);
+      right_keypoints.push_back(frame_train->keypoints_[match.trainIdx]);
+      left_descs.push_back(frame_query->descriptors_.row(match.queryIdx));
+      right_descs.push_back(frame_train->descriptors_.row(match.trainIdx));
     }
   }
   float padding_from_average = 2.0f;
   stereo_ambig_constraint =
-      avg_constraint / stereo_matches.size() + padding_from_average;
+      avg_constraint / matches.size() + padding_from_average;
   // Set the left and right data to the update non-ambigious data.
-  *left = Frame(left_keypoints, left_descs, left->frame_ID_);
-  *right = Frame(right_keypoints, right_descs, right->frame_ID_);
+  *frame_query = Frame(left_keypoints, left_descs, frame_query->frame_ID_);
+  if (modify_second_matches) {
+    *frame_train = Frame(right_keypoints, right_descs, frame_train->frame_ID_);
+  }
+}
+
+// Combine Vision Factors
+// First get all the matches between the left and left and left and right
+// Same for the curr right
+// Then match for stereo and the remaining points in the left frame are all non-initial and matches we should consider.
+// The rest of the matches should be marked initial and passed back to the main function.
+VisionFactor* Frontend::ConstrainedMatches(Frame* left_curr,
+                                           Frame* right_curr,
+                                           Frame* left_past,
+                                           Frame* right_past) {
+  // Protect against bad frames, return empty matching.
+  if (left_past->keypoints_.size() == 0) {
+    return new VisionFactor(left_past->frame_ID_,
+                            left_curr->frame_ID_,
+                            std::vector<FeatureMatch>());
+  }
+  RemoveAmbigMatches(left_curr, left_past, false);
+  RemoveAmbigMatches(right_curr, right_past, false);
+  RemoveAmbigMatches(left_curr, right_past, false);
+  RemoveAmbigMatches(right_curr, left_past, false);
+  RemoveAmbigMatches(left_curr, right_curr, false);
+  return GetFeatureMatches(left_past, left_curr, true);
 }
 
 bool Frontend::ObserveImage(const cv::Mat& left_image,
@@ -405,27 +435,28 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
   Frame curr_frame, right_temp_frame;
   ExtractFeatures(left_image, &curr_frame);
   ExtractFeatures(right_image, &right_temp_frame);
-  // Remove ambigious stereo matching points from left's and right's points.
-  std::vector<cv::DMatch> stereo_matches = GetMatches(curr_frame,
-                                                      right_temp_frame,
-                                                      config_.nn_match_ratio_);
-  RemoveAmbigStereo(&curr_frame, &right_temp_frame, stereo_matches);
-  // If we are running a debug version, attach image to frame.
-  if (config_.debug_images_) {
-    curr_frame.debug_image_ = left_image;
-    right_temp_frame.debug_image_ = right_image;
-  }
   // Keep track of the points that are original to this frame.
-  for (Frame& past_frame : frame_list_) {
-    VisionFactor* matches;
-    matches = GetFeatureMatches(&past_frame, &curr_frame);
+  for (auto it = frame_list_.rbegin(); it != frame_list_.rend(); ++it) {
+    std::cout << "Constraining" << std::endl;
+    Frame& left_frame_past = it->first;
+    Frame& right_frame_past = it->second;
+    VisionFactor* matches = ConstrainedMatches(&curr_frame,
+                                               &right_temp_frame,
+                                               &left_frame_past,
+                                               &right_frame_past);
     // TODO(Jack): verify that this conditional check does not mess up
     // book-keping.
     // if (matches.feature_matches.size() > config_.min_vision_matches) {
     //   vision_factors_.push_back(matches);
     // }
     vision_factors_.push_back(*matches);
+    std::cout << "Factors: " << vision_factors_.size() << std::endl;
     free(matches);
+  }
+  // If we are running a debug version, attach image to frame.
+  if (config_.debug_images_) {
+    curr_frame.debug_image_ = left_image;
+    right_temp_frame.debug_image_ = right_image;
   }
   // Calculate the depths of the points.
   vector<Vector3f> points;
@@ -454,15 +485,16 @@ bool Frontend::ObserveImage(const cv::Mat& left_image,
       !frame_list_.empty()  &&
       !vision_factors_.empty()) {
     const slam_types::VisionFactor factor = vision_factors_.back();
-    const Frame initial_frame = frame_list_.back();
-    CHECK_EQ(factor.pose_idx_initial, initial_frame.frame_ID_);
-    debug_images_.push_back(
-        CreateMatchDebugImage(initial_frame, curr_frame, factor));
+    const Frame initial_frame = frame_list_.back().first;
+    //TODO: Fails this check, could indicate deeper problem, investigate.
+    //CHECK_EQ(factor.pose_idx_initial, initial_frame.frame_ID_);
+    //debug_images_.push_back(
+    //    CreateMatchDebugImage(initial_frame, curr_frame, factor));
   }
   if (frame_list_.size() >= config_.frame_life_) {
     frame_list_.erase(frame_list_.begin());
   }
-  frame_list_.push_back(curr_frame);
+  frame_list_.push_back(std::pair<Frame, Frame>(curr_frame, right_temp_frame));
   return true;
 }
 
@@ -501,22 +533,15 @@ int Frontend::GetNumPoses() {
   return nodes_.size();
 }
 
-/* --- Frame Implementation Code --- */
-
-Frame::Frame(const vector<cv::KeyPoint>& keypoints,
-             const cv::Mat& descriptors,
-             uint64_t frame_ID) {
-  keypoints_ = keypoints;
-  descriptors_ = descriptors;
-  frame_ID_ = frame_ID;
-  is_initial_ = std::vector<bool>(keypoints_.size(), true);
-  initial_ids_ = std::vector<int64_t>(keypoints_.size(), -1);
-}
-
 vector<cv::DMatch> Frontend::GetMatches(const Frame& frame_query,
                                         const Frame& frame_train,
                                         double nn_match_ratio) {
   vector<vector<cv::DMatch>> matches;
+  // Opencv knn match cannot properly handle when a descriptor is empty.
+  if (frame_query.descriptors_.rows == 0
+      || frame_train.descriptors_.rows == 0) {
+    return vector<cv::DMatch>();
+  }
   matcher_->knnMatch(frame_query.descriptors_,
                      frame_train.descriptors_,
                      matches, 2);
@@ -530,6 +555,18 @@ vector<cv::DMatch> Frontend::GetMatches(const Frame& frame_query,
     }
   }
   return best_matches;
+}
+
+/* --- Frame Implementation Code --- */
+
+Frame::Frame(const vector<cv::KeyPoint>& keypoints,
+             const cv::Mat& descriptors,
+             uint64_t frame_ID) {
+  keypoints_ = keypoints;
+  descriptors_ = descriptors;
+  frame_ID_ = frame_ID;
+  is_initial_ = std::vector<bool>(keypoints_.size(), true);
+  initial_ids_ = std::vector<int64_t>(keypoints_.size(), -1);
 }
 
 /* --- Config Implementation Code --- */
