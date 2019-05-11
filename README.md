@@ -3,7 +3,9 @@ SLAM frontend for a ground robot using vision and odometry
 
 ## Dependencies
 Install [ROS](http://wiki.ros.org/ROS/Installation)
+
 Install glog and gflags
+
 Install Opencv and the non-free modules (https://github.com/umass-amrl/image-feature-comparison/blob/master/opencv.md)
 
 ## Build Instructions
