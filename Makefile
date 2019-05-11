@@ -1,12 +1,12 @@
 # Clang is a good compiler to use during development due to its faster compile
 # times and more readable output.
-C_compiler=/usr/bin/clang
-CXX_compiler=/usr/bin/clang++
+# C_compiler=/usr/bin/clang
+# CXX_compiler=/usr/bin/clang++
 
 # GCC is better for release mode due to the speed of its output, and its support
 # for OpenMP.
-#C_compiler=/usr/bin/gcc
-#CXX_compiler=/usr/bin/g++
+C_compiler=/usr/bin/gcc
+CXX_compiler=/usr/bin/g++
 
 # acceptable build_types: Release/Debug/Profile
 build_type=Release

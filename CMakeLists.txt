@@ -35,7 +35,7 @@ SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 # Ask ROS to compile custom message type definitions.
 rosbuild_genmsg()
 
-SET(libs roslib roscpp rosbag console_bridge cv_bridge glog gflags opencv_xfeatures2d)
+SET(libs roslib roscpp rosbag console_bridge cv_bridge glog gflags opencv_xfeatures2d boost_system)
 
 ADD_LIBRARY(shared_library
             src/gui_helpers.cc
@@ -50,9 +50,3 @@ TARGET_LINK_LIBRARIES(slam_frontend
                       ${OpenCV_LIBS}
                       ${libs})
 
-ROSBUILD_ADD_EXECUTABLE(bag_image_extract
-                        src/test/bag_extract.cc)
-
-TARGET_LINK_LIBRARIES(bag_image_extract
-                      ${OpenCV_LIBS}
-${libs})
