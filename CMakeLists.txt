@@ -1,6 +1,8 @@
 PROJECT(vision_slam_frontend)
 CMAKE_MINIMUM_REQUIRED(VERSION 2.6)
 
+OPTION(USE_XFEATURES "Compile with OpenCV extra features module" OFF)
+
 MESSAGE(STATUS "Compiling Slam Frontend")
 MESSAGE(STATUS "Using compiler: ${CMAKE_CXX_COMPILER}")
 MESSAGE(STATUS "Build Type: ${CMAKE_BUILD_TYPE}")
@@ -35,7 +37,16 @@ SET(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 # Ask ROS to compile custom message type definitions.
 rosbuild_genmsg()
 
-SET(libs roslib roscpp rosbag console_bridge cv_bridge glog gflags opencv_xfeatures2d boost_system)
+INCLUDE_DIRECTORIES(src/shared)
+ADD_SUBDIRECTORY(src/shared)
+
+SET(libs roslib roscpp rosbag console_bridge cv_bridge glog gflags boost_system amrl-shared-lib)
+
+IF (USE_XFEATURES)
+  MESSAGE(STATUS "Compiling with OpenCV xfeatures")
+  ADD_DEFINITIONS(-DUSE_XFEATURES)
+  SET(libs ${libs} opencv_xfeatures2d)
+ENDIF ()
 
 ADD_LIBRARY(shared_library
             src/gui_helpers.cc

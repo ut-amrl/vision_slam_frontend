@@ -30,7 +30,9 @@
 #include "opencv2/opencv.hpp"
 #include "opencv2/features2d.hpp"
 #include "opencv2/imgproc.hpp"
+#ifdef USE_XFEATURES
 #include "opencv2/xfeatures2d.hpp"
+#endif
 #include "glog/logging.h"
 #include "opencv2/core/eigen.hpp"
 
@@ -217,6 +219,7 @@ Frontend::Frontend(const string& config_path) :
       config_.bf_matcher_param_ = cv::NORM_HAMMING;
       break;
     }
+#ifdef USE_XFEATURES
     case FrontendConfig::DescriptorExtractorType::SURF: {
       descriptor_extractor_ = cv::xfeatures2d::SURF::create();
       config_.bf_matcher_param_ = cv::NORM_L2;
@@ -235,6 +238,7 @@ Frontend::Frontend(const string& config_path) :
       config_.bf_matcher_param_ = cv::NORM_HAMMING;
       break;
     }
+#endif
     default: {
       LOG(ERROR) << "Could not recognize descriptor extractor option.";
       exit(1);
