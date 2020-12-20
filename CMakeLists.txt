@@ -18,9 +18,8 @@ ELSEIF(${CMAKE_BUILD_TYPE} MATCHES "Debug")
   SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -g")
 ENDIF()
 
-FIND_PACKAGE(OpenCV REQUIRED)
+FIND_PACKAGE(OpenCV EXACT 3.2.0 REQUIRED)
 INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})
-
 INCLUDE($ENV{ROS_ROOT}/core/rosbuild/rosbuild.cmake)
 
 rosbuild_init()
@@ -39,8 +38,9 @@ rosbuild_genmsg()
 
 INCLUDE_DIRECTORIES(src/shared)
 ADD_SUBDIRECTORY(src/shared)
+LINK_DIRECTORIES(src/shared/build)
 
-SET(libs roslib roscpp rosbag console_bridge cv_bridge glog gflags boost_system amrl-shared-lib)
+SET(libs roslib roscpp rosbag console_bridge cv_bridge glog gflags boost_system)
 
 IF (USE_XFEATURES)
   MESSAGE(STATUS "Compiling with OpenCV xfeatures")
@@ -48,16 +48,13 @@ IF (USE_XFEATURES)
   SET(libs ${libs} opencv_xfeatures2d)
 ENDIF ()
 
-ADD_LIBRARY(shared_library
-            src/gui_helpers.cc
-            src/timer.cc)
-
 ROSBUILD_ADD_EXECUTABLE(slam_frontend
                         src/slam_frontend_main.cc
-                        src/slam_frontend.cc)
+                        src/slam_frontend.cc
+                        src/gui_helpers.cc)
 
 TARGET_LINK_LIBRARIES(slam_frontend
-                      shared_library
+                      ${AMRL_LIBRARY_NAME}
                       ${OpenCV_LIBS}
                       ${libs})
 

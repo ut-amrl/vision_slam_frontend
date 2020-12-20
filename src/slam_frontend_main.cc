@@ -238,7 +238,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   cv_bridge::CvImage img_tranform;
   try {
     bag.open(filename, rosbag::bagmode::Read);
-  } catch(rosbag::BagException exception) {
+  } catch(rosbag::BagException& exception) {
     printf("Unable to read %s, reason:\n %s\n", filename, exception.what());
     return;
   }
@@ -331,7 +331,7 @@ void ProcessBagfile(const char* filename, ros::NodeHandle* n) {
   rosbag::Bag output_bag;
   try {
     output_bag.open(FLAGS_output.c_str(), rosbag::bagmode::Write);
-  } catch(rosbag::BagException exception) {
+  } catch(rosbag::BagException& exception) {
     printf("Unable to open %s, reason:\n %s\n",
             FLAGS_output.c_str(),
             exception.what());
