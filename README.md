@@ -39,7 +39,7 @@ rviz -d visualization.rviz
 
 This will run the program and you will get something that looks like the following in your RViz window:
 
-TODO: ADD Picture.
+![The slam frontend in RViz with the pointcloud generated and the image currently seen.](img/Finished.png)
 
 __Note__, this is just a frontend, so the path might not match the one taken in the bag. This is the point of having a SLAM backend to perform optimization and correct for odometry drift.
 
