@@ -250,9 +250,6 @@ Frontend::Frontend(const string& config_path) :
 void Frontend::ObserveOdometry(const Vector3f& translation,
                                const Quaternionf& rotation,
                                double timestamp) {
-  odom_translation_ = translation;
-  odom_rotation_ = rotation;
-  odom_timestamp_ = timestamp;
   if (!odom_initialized_) {
     init_odom_rotation_ = rotation;
     init_odom_translation_ = translation;
@@ -260,7 +257,11 @@ void Frontend::ObserveOdometry(const Vector3f& translation,
     prev_odom_translation_ = odom_translation_;
     odom_initialized_ = true;
   }
+  odom_translation_ = translation;
+  odom_rotation_ = rotation;
+  odom_timestamp_ = timestamp;
 }
+
 
 void Frontend::ExtractFeatures(cv::Mat image, Frame* frame) {
   vector<cv::KeyPoint> frame_keypoints;
